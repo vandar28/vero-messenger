@@ -4,7 +4,8 @@
   "description": "Файловый менеджер с чатами и друзьями",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "backup": "node backup.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

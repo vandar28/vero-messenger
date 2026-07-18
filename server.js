@@ -8,6 +8,9 @@ var fs = require('fs');
 var uuid = require('uuid').v4;
 var initSqlJs = require('sql.js');
 
+// ===== НОВОЕ: ПОДКЛЮЧАЕМ СИСТЕМУ БЭКАПОВ =====
+var backup = require('./backup');
+
 var app = express();
 var PORT = process.env.PORT || 3000;
 var JWT_SECRET = process.env.JWT_SECRET || 'secret123';
@@ -19,7 +22,28 @@ app.use(express.static('public'));
 var db;
 var DB_PATH = 'database.sqlite';
 
+// ===== НОВОЕ: ФУНКЦИЯ ДЛЯ ВОССТАНОВЛЕНИЯ БЭКАПА =====
+async function restoreDatabaseIfNeeded() {
+  console.log('🔄 Проверка бэкапов...');
+  try {
+    var restored = await backup.restoreFromGitHub();
+    if (restored) {
+      console.log('✅ База данных восстановлена из GitHub');
+      return true;
+    } else {
+      console.log('ℹ️ Используем локальную базу данных');
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Ошибка восстановления:', error);
+    return false;
+  }
+}
+
 async function startDB() {
+  // ===== НОВОЕ: ВОССТАНАВЛИВАЕМ БД ПЕРЕД ЗАПУСКОМ =====
+  await restoreDatabaseIfNeeded();
+  
   var SQL = await initSqlJs();
   if (fs.existsSync(DB_PATH)) db = new SQL.Database(fs.readFileSync(DB_PATH));
   else db = new SQL.Database();
@@ -47,6 +71,12 @@ async function startDB() {
   await createAdminAccount();
   saveDB();
   console.log('DB OK');
+  
+  // ===== НОВОЕ: ДЕЛАЕМ БЭКАП СРАЗУ ПОСЛЕ ЗАПУСКА =====
+  setTimeout(function() {
+    console.log('🔄 Создание первого бэкапа...');
+    backup.fullBackup();
+  }, 5000);
 }
 
 async function createAdminAccount() {
@@ -137,6 +167,65 @@ function adminAuth(req, res, next) {
   }
   next();
 }
+
+// ============ НОВЫЙ ЭНДПОИНТ ДЛЯ СКАЧИВАНИЯ БД ============
+app.get('/api/backup/download', function(req, res) {
+  var key = req.query.key;
+  
+  // Проверяем ключ
+  if (key !== process.env.BACKUP_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  var dbPath = path.join(__dirname, 'database.sqlite');
+  
+  if (!fs.existsSync(dbPath)) {
+    return res.status(404).json({ error: 'Database not found' });
+  }
+  
+  // Отправляем файл
+  res.sendFile(dbPath, function(err) {
+    if (err) {
+      console.error('❌ Ошибка отправки БД:', err);
+    } else {
+      console.log('✅ БД отправлена для бэкапа');
+    }
+  });
+});
+
+// ============ НОВЫЙ ЭНДПОИНТ ДЛЯ СТАТУСА БЭКАПОВ ============
+app.get('/api/backup/status', function(req, res) {
+  var backupDir = path.join(__dirname, 'backups');
+  
+  if (!fs.existsSync(backupDir)) {
+    return res.json({ 
+      backups: [], 
+      total: 0,
+      message: 'Нет бэкапов' 
+    });
+  }
+  
+  var files = fs.readdirSync(backupDir)
+    .filter(function(f) { return f.startsWith('backup-') && f.endsWith('.sqlite.gz'); })
+    .sort();
+  
+  var backups = files.map(function(file) {
+    var filePath = path.join(backupDir, file);
+    var stats = fs.statSync(filePath);
+    return {
+      name: file,
+      size: (stats.size / 1024 / 1024).toFixed(2) + ' MB',
+      created: stats.birthtime,
+      modified: stats.mtime
+    };
+  });
+  
+  res.json({
+    backups: backups.slice(-16),
+    total: backups.length,
+    maxBackups: 16
+  });
+});
 
 // ============ АВТОРИЗАЦИЯ ============
 app.post('/api/register', uploadAvatar.single('avatar'), async function(req, res) {
@@ -518,6 +607,28 @@ app.get('/login.html', function(req, res) { res.sendFile(path.join(__dirname, 'p
 app.get('/register.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'register.html')); });
 app.get('/dashboard.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'dashboard.html')); });
 
+// ===== НОВОЕ: ЗАПУСК С БЭКАПАМИ =====
 startDB().then(function() {
-  app.listen(PORT, function() { console.log('http://localhost:' + PORT); });
+  app.listen(PORT, function() { 
+    console.log('🚀 Сервер запущен на http://localhost:' + PORT);
+    console.log('📦 Система бэкапов активна (каждые 10 минут)');
+    console.log('💾 Хранится последних 16 бэкапов');
+  });
+});
+
+// ===== НОВОЕ: ОБРАБОТКА ЗАКРЫТИЯ =====
+process.on('SIGINT', function() {
+  console.log('\n🔄 Создание бэкапа перед выходом...');
+  backup.fullBackup().then(function() {
+    console.log('👋 Сервер остановлен');
+    process.exit();
+  });
+});
+
+process.on('SIGTERM', function() {
+  console.log('\n🔄 Создание бэкапа перед выходом...');
+  backup.fullBackup().then(function() {
+    console.log('👋 Сервер остановлен');
+    process.exit();
+  });
 });
