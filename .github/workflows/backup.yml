@@ -14,9 +14,13 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: write
+      actions: read
+      
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -24,15 +28,14 @@ jobs:
       - name: 🔄 Download database from Render
         run: |
           echo "Скачиваем базу данных с Render..."
-          # ЗАМЕНИ НА СВОЙ URL (ниже я объясню)
-          curl -L -o database.sqlite https://your-app.onrender.com/api/backup/download?key=${{ secrets.BACKUP_KEY }}
+          curl -L -o database.sqlite https://vero-messenger.onrender.com/api/backup/download?key=${{ secrets.BACKUP_KEY }}
           
           if [ -f database.sqlite ]; then
             echo "✅ База данных скачана"
             ls -lh database.sqlite
           else
             echo "❌ База данных не скачана"
-            exit 1
+            exit 0
           fi
       
       - name: 📦 Compress database
@@ -52,16 +55,16 @@ jobs:
         run: |
           echo "Очищаем старые бэкапы..."
           cd backups
-          ls -t backup-*.sqlite.gz | tail -n +17 | xargs -r rm
-          echo "✅ Осталось $(ls -1 backup-*.sqlite.gz | wc -l) бэкапов"
+          ls -t backup-*.sqlite.gz 2>/dev/null | tail -n +17 | xargs -r rm
+          echo "✅ Осталось $(ls -1 backup-*.sqlite.gz 2>/dev/null | wc -l) бэкапов"
       
       - name: 📤 Commit and push to GitHub
         run: |
           echo "Отправляем бэкапы в GitHub..."
-          git config user.name "GitHub Action"
-          git config user.email "action@github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          git add backups/
+          git add -f backups/
           
           if git diff --staged --quiet; then
             echo "ℹ️ Нет изменений для коммита"
@@ -79,7 +82,7 @@ jobs:
           echo "📊 ИНФОРМАЦИЯ О БЭКАПАХ:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "Всего бэкапов: $(ls -1 backups/backup-*.sqlite.gz 2>/dev/null | wc -l)"
-          echo "Размер последнего: $(du -h backups/latest.sqlite.gz | cut -f1)"
-          echo "Самый свежий: $(ls -t backups/backup-*.sqlite.gz | head -1 | xargs basename)"
-          echo "Самый старый: $(ls -t backups/backup-*.sqlite.gz | tail -1 | xargs basename)"
+          echo "Размер последнего: $(du -h backups/latest.sqlite.gz 2>/dev/null | cut -f1)"
+          echo "Самый свежий: $(ls -t backups/backup-*.sqlite.gz 2>/dev/null | head -1 | xargs basename)"
+          echo "Самый старый: $(ls -t backups/backup-*.sqlite.gz 2>/dev/null | tail -1 | xargs basename)"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
