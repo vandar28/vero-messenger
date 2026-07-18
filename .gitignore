@@ -2,7 +2,6 @@ node_modules/
 buffer/
 database.sqlite
 .env
-backups/
 temp_backups/
 *.log
 .DS_Store
