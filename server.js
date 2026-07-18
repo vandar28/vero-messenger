@@ -1,3 +1,13 @@
+// ===== ВРЕМЕННО: УДАЛЯЕМ ПОВРЕЖДЕННУЮ БД ПРИ СТАРТЕ =====
+var DB_PATH = 'database.sqlite';
+if (fs.existsSync(DB_PATH)) {
+  var stats = fs.statSync(DB_PATH);
+  if (stats.size < 100) {
+    console.log('🗑️ Удаляем поврежденную БД (слишком маленькая)...');
+    fs.unlinkSync(DB_PATH);
+    console.log('✅ БД удалена');
+  }
+}
 var express = require('express');
 var cors = require('cors');
 var bcrypt = require('bcryptjs');
