@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
 const zlib = require('zlib');
+const https = require('https');
 
 class DatabaseBackup {
   constructor() {
@@ -16,13 +16,116 @@ class DatabaseBackup {
     console.log('📁 Папка для бэкапов создана');
   }
 
+  // ===== НОВОЕ: СКАЧИВАНИЕ БЭКАПА С GITHUB ЧЕРЕЗ API =====
+  async downloadBackupFromGitHub() {
+    const repo = 'vandar28/vero-messenger';
+    const url = `https://api.github.com/repos/${repo}/contents/backups/latest.sqlite.gz`;
+    
+    console.log('📥 Попытка скачать бэкап из GitHub...');
+    
+    return new Promise((resolve) => {
+      const options = {
+        headers: {
+          'User-Agent': 'Node.js',
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      };
+      
+      // Если есть токен GitHub, используем его
+      const token = process.env.GITHUB_TOKEN || '';
+      if (token) {
+        options.headers['Authorization'] = `token ${token}`;
+      }
+      
+      https.get(url, options, (response) => {
+        // Если файл не найден
+        if (response.statusCode === 404) {
+          console.log('ℹ️ Бэкап не найден на GitHub');
+          resolve(null);
+          return;
+        }
+        
+        // Если ошибка
+        if (response.statusCode !== 200) {
+          console.log(`⚠️ Ошибка GitHub API: ${response.statusCode}`);
+          resolve(null);
+          return;
+        }
+        
+        let data = '';
+        response.on('data', chunk => data += chunk);
+        response.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            // Декодируем base64
+            const buffer = Buffer.from(json.content, 'base64');
+            console.log(`✅ Бэкап скачан с GitHub! Размер: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
+            resolve(buffer);
+          } catch (e) {
+            console.error('❌ Ошибка парсинга ответа:', e);
+            resolve(null);
+          }
+        });
+      }).on('error', (e) => {
+        console.error('❌ Ошибка загрузки:', e);
+        resolve(null);
+      });
+    });
+  }
+
+  // ===== НОВОЕ: ВОССТАНОВЛЕНИЕ ИЗ GITHUB =====
+  async restoreFromGitHub() {
+    console.log('🔄 Проверка бэкапов в GitHub...');
+    
+    try {
+      const data = await this.downloadBackupFromGitHub();
+      if (!data) {
+        console.log('ℹ️ Бэкап не найден на GitHub, пробуем локальный...');
+        return this.restoreLatestBackup();
+      }
+      
+      // Проверяем что данные не пустые
+      if (data.length < 100) {
+        console.log('⚠️ Бэкап слишком маленький, возможно пустой');
+        return this.restoreLatestBackup();
+      }
+      
+      // Распаковываем
+      const decompressed = zlib.gunzipSync(data);
+      
+      // Проверяем что распакованные данные валидны (SQLite заголовок)
+      const header = decompressed.slice(0, 16).toString('hex');
+      if (!header.startsWith('53514c69746520666f726d6174')) {
+        console.log('⚠️ Бэкап поврежден (не SQLite), пробуем локальный...');
+        return this.restoreLatestBackup();
+      }
+      
+      fs.writeFileSync(this.dbPath, decompressed);
+      
+      console.log(`✅ БД восстановлена из GitHub! Размер: ${(decompressed.length / 1024 / 1024).toFixed(2)} MB`);
+      return true;
+      
+    } catch (error) {
+      console.error('❌ Ошибка восстановления из GitHub:', error.message);
+      console.log('🔄 Пробуем восстановить из локального бэкапа...');
+      return this.restoreLatestBackup();
+    }
+  }
+
   createBackup() {
     if (!fs.existsSync(this.dbPath)) {
       console.log('❌ База данных не найдена');
       return null;
     }
 
-    const sizeMB = (fs.statSync(this.dbPath).size / 1024 / 1024).toFixed(2);
+    // Проверяем что БД не пустая
+    const stats = fs.statSync(this.dbPath);
+    if (stats.size < 100) {
+      console.log('⚠️ БД слишком маленькая, пропускаем бэкап');
+      return null;
+    }
+
+    const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
     console.log(`📊 Текущий размер БД: ${sizeMB} MB`);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -33,6 +136,10 @@ class DatabaseBackup {
       const data = fs.readFileSync(this.dbPath);
       const compressed = zlib.gzipSync(data, { level: 9 });
       fs.writeFileSync(backupPath, compressed);
+      
+      // Копируем как latest.sqlite.gz
+      const latestPath = path.join(this.backupDir, 'latest.sqlite.gz');
+      fs.copyFileSync(backupPath, latestPath);
       
       const originalSize = (data.length / 1024 / 1024).toFixed(2);
       const compressedSize = (compressed.length / 1024 / 1024).toFixed(2);
@@ -77,71 +184,6 @@ class DatabaseBackup {
     }
   }
 
-  // ===== ИСПРАВЛЕННАЯ ФУНКЦИЯ =====
-  syncToGitHub() {
-    return new Promise((resolve, reject) => {
-      console.log('📤 Отправка бэкапов в GitHub...');
-      
-      // ИСПОЛЬЗУЕМ -f ЧТОБЫ ДОБАВИТЬ ДАЖЕ ЕСЛИ В .gitignore
-      exec('git add -f backups/', (error) => {
-        if (error) console.log('⚠️ git add:', error.message);
-        
-        exec('git status --porcelain', (err, status) => {
-          if (err) console.log('⚠️ git status error:', err.message);
-          
-          if (status && status.trim()) {
-            const message = `Auto backup: ${new Date().toISOString()}`;
-            exec(`git commit -m "${message}"`, (err2) => {
-              if (err2) console.log('⚠️ git commit:', err2.message);
-              
-              exec('git push origin main', (err3) => {
-                if (err3) {
-                  console.log('⚠️ git push error:', err3.message);
-                  exec('git push origin main --force', (err4) => {
-                    if (err4) {
-                      console.error('❌ Ошибка отправки в GitHub:', err4.message);
-                      reject(err4);
-                    } else {
-                      console.log('✅ Бэкапы отправлены в GitHub (force)');
-                      resolve();
-                    }
-                  });
-                } else {
-                  console.log('✅ Бэкапы отправлены в GitHub');
-                  resolve();
-                }
-              });
-            });
-          } else {
-            console.log('ℹ️ Нет изменений для коммита');
-            resolve();
-          }
-        });
-      });
-    });
-  }
-
-  async fullBackup() {
-    console.log('\n🔄 Начинаем процесс бэкапа...');
-    
-    const backupPath = this.createBackup();
-    if (!backupPath) {
-      console.log('❌ Бэкап не создан');
-      return false;
-    }
-    
-    this.cleanOldBackups();
-    
-    try {
-      await this.syncToGitHub();
-      console.log('✅ Процесс бэкапа завершен успешно\n');
-      return true;
-    } catch (error) {
-      console.error('❌ Ошибка синхронизации с GitHub:', error);
-      return false;
-    }
-  }
-
   restoreLatestBackup() {
     try {
       const files = fs.readdirSync(this.backupDir)
@@ -156,37 +198,40 @@ class DatabaseBackup {
       const latest = files[files.length - 1];
       const backupPath = path.join(this.backupDir, latest);
       
-      console.log(`📥 Восстановление из: ${latest}`);
+      console.log(`📥 Восстановление из локального бэкапа: ${latest}`);
       
       const compressed = fs.readFileSync(backupPath);
       const data = zlib.gunzipSync(compressed);
+      
+      // Проверяем что это SQLite
+      const header = data.slice(0, 16).toString('hex');
+      if (!header.startsWith('53514c69746520666f726d6174')) {
+        console.log('⚠️ Локальный бэкап поврежден');
+        return false;
+      }
+      
       fs.writeFileSync(this.dbPath, data);
       
-      console.log(`✅ БД восстановлена! Размер: ${(data.length / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`✅ БД восстановлена из локального бэкапа! Размер: ${(data.length / 1024 / 1024).toFixed(2)} MB`);
       return true;
     } catch (error) {
-      console.error('❌ Ошибка восстановления:', error);
+      console.error('❌ Ошибка восстановления из локального бэкапа:', error);
       return false;
     }
   }
 
-  async restoreFromGitHub() {
-    console.log('🔄 Проверка бэкапов в GitHub...');
+  async fullBackup() {
+    console.log('\n🔄 Начинаем процесс бэкапа...');
     
-    return new Promise((resolve) => {
-      exec('git pull origin main', (error) => {
-        if (error) {
-          console.log('⚠️ Не удалось обновить репозиторий');
-          const restored = this.restoreLatestBackup();
-          resolve(restored);
-          return;
-        }
-        
-        console.log('📥 Репозиторий обновлен');
-        const restored = this.restoreLatestBackup();
-        resolve(restored);
-      });
-    });
+    const backupPath = this.createBackup();
+    if (!backupPath) {
+      console.log('⚠️ Бэкап не создан');
+      return false;
+    }
+    
+    this.cleanOldBackups();
+    console.log('✅ Процесс бэкапа завершен успешно\n');
+    return true;
   }
 }
 
