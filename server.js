@@ -1,13 +1,3 @@
-// ===== ВРЕМЕННО: УДАЛЯЕМ ПОВРЕЖДЕННУЮ БД ПРИ СТАРТЕ =====
-var DB_PATH = 'database.sqlite';
-if (fs.existsSync(DB_PATH)) {
-  var stats = fs.statSync(DB_PATH);
-  if (stats.size < 100) {
-    console.log('🗑️ Удаляем поврежденную БД (слишком маленькая)...');
-    fs.unlinkSync(DB_PATH);
-    console.log('✅ БД удалена');
-  }
-}
 var express = require('express');
 var cors = require('cors');
 var bcrypt = require('bcryptjs');
@@ -31,6 +21,20 @@ app.use(express.static('public'));
 
 var db;
 var DB_PATH = 'database.sqlite';
+
+// ===== ВРЕМЕННО: УДАЛЯЕМ ПОВРЕЖДЕННУЮ БД ПРИ СТАРТЕ =====
+if (fs.existsSync(DB_PATH)) {
+  try {
+    var stats = fs.statSync(DB_PATH);
+    if (stats.size < 100) {
+      console.log('🗑️ Удаляем поврежденную БД (слишком маленькая)...');
+      fs.unlinkSync(DB_PATH);
+      console.log('✅ БД удалена');
+    }
+  } catch (e) {
+    console.log('⚠️ Не удалось проверить БД:', e.message);
+  }
+}
 
 // ===== НОВОЕ: ФУНКЦИЯ ДЛЯ ВОССТАНОВЛЕНИЯ БЭКАПА =====
 async function restoreDatabaseIfNeeded() {
