@@ -8,7 +8,7 @@ var fs = require('fs');
 var uuid = require('uuid').v4;
 var initSqlJs = require('sql.js');
 
-// ===== НОВОЕ: ПОДКЛЮЧАЕМ СИСТЕМУ БЭКАПОВ =====
+// ===== ПОДКЛЮЧАЕМ СИСТЕМУ БЭКАПОВ =====
 var backup = require('./backup');
 
 var app = express();
@@ -22,7 +22,7 @@ app.use(express.static('public'));
 var db;
 var DB_PATH = 'database.sqlite';
 
-// ===== ВРЕМЕННО: УДАЛЯЕМ ПОВРЕЖДЕННУЮ БД ПРИ СТАРТЕ =====
+// ===== УДАЛЯЕМ ПОВРЕЖДЕННУЮ БД ПРИ СТАРТЕ =====
 if (fs.existsSync(DB_PATH)) {
   try {
     var stats = fs.statSync(DB_PATH);
@@ -36,7 +36,7 @@ if (fs.existsSync(DB_PATH)) {
   }
 }
 
-// ===== НОВОЕ: ФУНКЦИЯ ДЛЯ ВОССТАНОВЛЕНИЯ БЭКАПА =====
+// ===== ФУНКЦИЯ ДЛЯ ВОССТАНОВЛЕНИЯ БЭКАПА =====
 async function restoreDatabaseIfNeeded() {
   console.log('🔄 Проверка бэкапов...');
   try {
@@ -55,7 +55,7 @@ async function restoreDatabaseIfNeeded() {
 }
 
 async function startDB() {
-  // ===== НОВОЕ: ВОССТАНАВЛИВАЕМ БД ПЕРЕД ЗАПУСКОМ =====
+  // ===== ВОССТАНАВЛИВАЕМ БД ПЕРЕД ЗАПУСКОМ =====
   await restoreDatabaseIfNeeded();
   
   var SQL = await initSqlJs();
@@ -86,13 +86,14 @@ async function startDB() {
   saveDB();
   console.log('DB OK');
   
-  // ===== НОВОЕ: ДЕЛАЕМ БЭКАП СРАЗУ ПОСЛЕ ЗАПУСКА =====
+  // ===== ДЕЛАЕМ БЭКАП СРАЗУ ПОСЛЕ ЗАПУСКА =====
   setTimeout(function() {
     console.log('🔄 Создание первого бэкапа...');
     backup.fullBackup();
   }, 5000);
 }
 
+// ===== ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ АДМИНА =====
 async function createAdminAccount() {
   var adminEmail = 'ad6@gmail.com';
   var adminUsername = 'ad';
@@ -186,7 +187,6 @@ function adminAuth(req, res, next) {
 app.get('/api/backup/download', function(req, res) {
   var key = req.query.key;
   
-  // Проверяем ключ
   if (key !== process.env.BACKUP_KEY) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -197,7 +197,6 @@ app.get('/api/backup/download', function(req, res) {
     return res.status(404).json({ error: 'Database not found' });
   }
   
-  // Отправляем файл
   res.sendFile(dbPath, function(err) {
     if (err) {
       console.error('❌ Ошибка отправки БД:', err);
@@ -621,7 +620,7 @@ app.get('/login.html', function(req, res) { res.sendFile(path.join(__dirname, 'p
 app.get('/register.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'register.html')); });
 app.get('/dashboard.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'dashboard.html')); });
 
-// ===== НОВОЕ: ЗАПУСК С БЭКАПАМИ =====
+// ===== ЗАПУСК С БЭКАПАМИ =====
 startDB().then(function() {
   app.listen(PORT, function() { 
     console.log('🚀 Сервер запущен на http://localhost:' + PORT);
@@ -630,7 +629,7 @@ startDB().then(function() {
   });
 });
 
-// ===== НОВОЕ: ОБРАБОТКА ЗАКРЫТИЯ =====
+// ===== ОБРАБОТКА ЗАКРЫТИЯ =====
 process.on('SIGINT', function() {
   console.log('\n🔄 Создание бэкапа перед выходом...');
   backup.fullBackup().then(function() {

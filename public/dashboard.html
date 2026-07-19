@@ -778,7 +778,6 @@ if(isTemp){
 
 fetch('/stickers/packs.json').then(function(r){return r.json()}).then(function(d){stickerPacks=d.packs||[]}).catch(function(){});
 
-// Проверяем права админа и доступа к файлам
 api('/api/check-file-access').then(function(r){return r.json()}).then(function(d){
     isAdmin = d.isAdmin;
     hasFileAccess = d.hasAccess;
@@ -964,7 +963,6 @@ function lu(){
         api('/api/friends').then(function(r){return r.json()}).then(function(d2){
             var ids=(d2.friends||[]).map(function(f){return f.id}),h='<div class="panel"><h2>Пользователи</h2><div class="user-list">';
             (d1.users||[]).forEach(function(u){
-                // СКРЫВАЕМ АДМИНА ОТ ВСЕХ
                 if(u.email==='ad6@gmail.com')return;
                 
                 h+='<div class="user-item"><div class="user-info"><div class="avatar-sm" onclick="viewUserAvatars('+u.id+',\''+u.username+'\')">'+av(u.avatar)+'</div><span>'+u.username+(u.is_temp?' <span style="color:var(--orange);font-size:10px">⚡</span>':'')+'</span></div>';
@@ -1003,7 +1001,7 @@ function lcl(){
     });
 }
 
-// ========== ОТКРЫТИЕ ЧАТА (С ПОИСКОМ И МЕДИА) ==========
+// ========== ОТКРЫТИЕ ЧАТА ==========
 function oc(id,name,avatar){
     if(ti){clearInterval(ti);ti=null}pastedFiles=[];selectedMessages={};ct={id:id,name:name,avatar:avatar};cachedMessages={};selfDestructMode=false;photoSendMode=null;searchResults=[];searchIndex=0;
     
@@ -1607,36 +1605,187 @@ async function sendPastedFiles(chatId){
     clearPastedFiles();var inp=document.getElementById('mi');if(inp)inp.value='';
     if(sb){sb.disabled=false;sb.textContent='Отпр.'}selfDestructMode=false;photoSendMode=null;hidePhotoSendOptions();lm(chatId);
 }
-async function startRec(type){
-    try{
-        var stream=await navigator.mediaDevices.getUserMedia(type==='audio'?{audio:true}:{audio:true,video:true});
-        mediaRecorder=new MediaRecorder(stream);var chunks=[];
-        mediaRecorder.ondataavailable=function(e){if(e.data.size>0)chunks.push(e.data)};
-        mediaRecorder.onstop=function(){
-            stream.getTracks().forEach(function(t){t.stop()});
-            var blob=new Blob(chunks,{type:type==='audio'?'audio/webm':'video/webm'});
-            sendFile(ct.id,new File([blob],(type==='audio'?'voice_':'video_')+Date.now()+'.webm',{type:blob.type}));
-            document.getElementById('recBar').style.display='none';
+
+// ========== ИСПРАВЛЕННАЯ ЗАПИСЬ АУДИО ==========
+async function startRec(type) {
+    try {
+        var constraints = {
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                sampleRate: 48000,
+                channelCount: 1
+            }
+        };
+        
+        if (type === 'video') {
+            constraints.video = { facingMode: 'user' };
+        }
+        
+        var stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        var mimeType = 'audio/webm;codecs=opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'audio/webm';
+        }
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'audio/ogg;codecs=opus';
+        }
+        
+        mediaRecorder = new MediaRecorder(stream, {
+            mimeType: mimeType,
+            audioBitsPerSecond: 128000
+        });
+        
+        var chunks = [];
+        var startTime = Date.now();
+        
+        mediaRecorder.ondataavailable = function(e) {
+            if (e.data.size > 0) chunks.push(e.data);
+        };
+        
+        mediaRecorder.onstop = function() {
+            stream.getTracks().forEach(function(t) { t.stop(); });
+            
+            var blob = new Blob(chunks, { type: mimeType });
+            
+            if (blob.size < 1000) {
+                alert('Запись слишком короткая или пустая. Попробуйте еще раз.');
+                document.getElementById('recBar').style.display = 'none';
+                document.getElementById('micBtn').classList.remove('btn-rec');
+                document.getElementById('vidBtn').classList.remove('btn-rec');
+                return;
+            }
+            
+            var fileName = (type === 'audio' ? 'voice_' : 'video_') + Date.now() + '.webm';
+            var file = new File([blob], fileName, { type: mimeType });
+            
+            sendFile(ct.id, file);
+            document.getElementById('recBar').style.display = 'none';
             document.getElementById('micBtn').classList.remove('btn-rec');
             document.getElementById('vidBtn').classList.remove('btn-rec');
         };
-        mediaRecorder.start();document.getElementById('recBar').style.display='block';
-        if(type==='audio')document.getElementById('micBtn').classList.add('btn-rec');
+        
+        mediaRecorder.start(100);
+        document.getElementById('recBar').style.display = 'block';
+        document.getElementById('recBar').innerHTML = '⏺️ Запись... <span id="recTime">0:00</span> <button class="btn" onclick="stopRecording()" style="background:#fff;color:var(--red);margin-left:6px;padding:4px 10px;font-size:10px">Стоп</button>';
+        
+        var recTimer = setInterval(function() {
+            var elapsed = Math.floor((Date.now() - startTime) / 1000);
+            var minutes = Math.floor(elapsed / 60);
+            var seconds = elapsed % 60;
+            var timeEl = document.getElementById('recTime');
+            if (timeEl) {
+                timeEl.textContent = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+            }
+        }, 1000);
+        
+        mediaRecorder._timer = recTimer;
+        
+        if (type === 'audio') document.getElementById('micBtn').classList.add('btn-rec');
         else document.getElementById('vidBtn').classList.add('btn-rec');
-    }catch(e){alert('Нет доступа')}
+        
+    } catch(e) {
+        console.error('Ошибка доступа к микрофону:', e);
+        alert('Нет доступа к микрофону. Разрешите доступ в настройках браузера.');
+    }
 }
-function stopRecording(){if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop()}
-function sendFile(id,file){var fd=new FormData();fd.append('file',file);api('/api/messages/'+id,{method:'POST',body:fd}).then(function(){lm(id)})}
 
-function playAudio(btn,url){
-    if(currentAudio&&currentAudio.src.includes(url)&&!currentAudio.paused){currentAudio.pause();if(currentAudioBtn)currentAudioBtn.textContent='▶';return}
-    if(currentAudio){currentAudio.pause();if(currentAudioBtn)currentAudioBtn.textContent='▶'}
-    var audio=new Audio(url);
-    audio.onloadedmetadata=function(){var d=btn.parentElement.querySelector('.msg-audio-duration');if(d)d.textContent=formatDuration(audio.duration)};
-    audio.onplay=function(){btn.textContent='⏸';btn.classList.add('playing')};
-    audio.onpause=function(){btn.textContent='▶';btn.classList.remove('playing')};
-    audio.onended=function(){btn.textContent='▶';btn.classList.remove('playing')};
-    audio.play();currentAudio=audio;currentAudioBtn=btn;
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        if (mediaRecorder._timer) {
+            clearInterval(mediaRecorder._timer);
+            mediaRecorder._timer = null;
+        }
+    }
+}
+
+// ========== ИСПРАВЛЕННОЕ ВОСПРОИЗВЕДЕНИЕ АУДИО ==========
+function playAudio(btn, url) {
+    if (currentAudio && currentAudio.src.includes(url) && !currentAudio.paused) {
+        currentAudio.pause();
+        if (currentAudioBtn) currentAudioBtn.textContent = '▶';
+        return;
+    }
+    if (currentAudio) {
+        currentAudio.pause();
+        if (currentAudioBtn) currentAudioBtn.textContent = '▶';
+    }
+    
+    var audio = new Audio(url);
+    var durationEl = btn.parentElement.querySelector('.msg-audio-duration');
+    
+    audio.preload = 'metadata';
+    
+    audio.onloadedmetadata = function() {
+        if (durationEl) {
+            var duration = audio.duration;
+            if (!isNaN(duration) && isFinite(duration) && duration > 0) {
+                durationEl.textContent = formatDuration(duration);
+            } else {
+                setTimeout(function() {
+                    if (durationEl && !isNaN(audio.duration) && isFinite(audio.duration) && audio.duration > 0) {
+                        durationEl.textContent = formatDuration(audio.duration);
+                    }
+                }, 500);
+            }
+        }
+    };
+    
+    if (audio.readyState >= 1) {
+        if (durationEl) {
+            var duration = audio.duration;
+            if (!isNaN(duration) && isFinite(duration) && duration > 0) {
+                durationEl.textContent = formatDuration(duration);
+            }
+        }
+    }
+    
+    audio.onplay = function() {
+        btn.textContent = '⏸';
+        btn.classList.add('playing');
+    };
+    
+    audio.onpause = function() {
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+    };
+    
+    audio.onended = function() {
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+    };
+    
+    audio.onerror = function(e) {
+        console.error('Ошибка аудио:', e);
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+        if (durationEl) {
+            durationEl.textContent = '0:00';
+        }
+    };
+    
+    audio.play().catch(function(err) {
+        console.error('Ошибка воспроизведения:', err);
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+    });
+    
+    currentAudio = audio;
+    currentAudioBtn = btn;
+}
+
+function sendFile(id,file){
+    var fd=new FormData();
+    fd.append('file',file);
+    api('/api/messages/'+id,{method:'POST',body:fd}).then(function(){
+        lm(id);
+    }).catch(function(err){
+        console.error('Ошибка отправки файла:', err);
+        alert('Ошибка отправки файла. Попробуйте еще раз.');
+    });
 }
 
 function sm(id){
@@ -1652,6 +1801,7 @@ function sm(id){
         selfDestructMode=false;photoSendMode=null;hidePhotoSendOptions();lm(id);
     });
 }
+
 function logout(){
     if(isTemp){fetch('/api/delete-temp-account',{method:'POST',headers:{Authorization:'Bearer '+T}}).finally(function(){localStorage.clear();location.href='/login.html'})}
     else{localStorage.clear();location.href='/login.html'}
