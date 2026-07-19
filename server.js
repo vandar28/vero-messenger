@@ -72,6 +72,7 @@ async function startDB() {
   db.run("CREATE TABLE IF NOT EXISTS reactions (id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER, user_id INTEGER, reaction TEXT, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS file_access (user_id INTEGER PRIMARY KEY, granted_by INTEGER, granted_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   
+  // ===== НОВЫЕ КОЛОНКИ ДЛЯ ОНЛАЙН СТАТУСА =====
   try { db.run("ALTER TABLE users ADD COLUMN is_temp INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL"); } catch(e) {}
   try { db.run("ALTER TABLE messages ADD COLUMN deleted_for_sender INTEGER DEFAULT 0"); } catch(e) {}
@@ -80,6 +81,10 @@ async function startDB() {
   try { db.run("ALTER TABLE messages ADD COLUMN forward_from_name TEXT DEFAULT NULL"); } catch(e) {}
   try { db.run("ALTER TABLE messages ADD COLUMN is_self_destruct INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE messages ADD COLUMN destruct_after_view INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE users ADD COLUMN last_seen DATETIME DEFAULT NULL"); } catch(e) {}
+  try { db.run("ALTER TABLE users ADD COLUMN is_online INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE users ADD COLUMN is_typing INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE users ADD COLUMN typing_to INTEGER DEFAULT NULL"); } catch(e) {}
   
   cleanAllTempAccounts();
   await createAdminAccount();
@@ -93,7 +98,7 @@ async function startDB() {
   }, 5000);
 }
 
-// ===== ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ АДМИНА =====
+// ===== ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ/ОБНОВЛЕНИЕ АДМИНА =====
 async function createAdminAccount() {
   var adminEmail = 'ad6@gmail.com';
   var adminUsername = 'ad';
@@ -106,7 +111,10 @@ async function createAdminAccount() {
       [adminUsername, adminEmail, hash]);
     console.log('✅ Админ создан: ad / ad6@gmail.com / 19283746');
   } else {
-    console.log('ℹ️ Админ уже существует');
+    console.log('🔄 Админ уже существует, обновляем пароль...');
+    var newHash = await bcrypt.hash(adminPassword, 10);
+    dbRun('UPDATE users SET password=? WHERE email=?', [newHash, adminEmail]);
+    console.log('✅ Пароль админа обновлен: ad6@gmail.com / 19283746');
   }
 }
 
@@ -268,6 +276,71 @@ app.post('/api/delete-temp-account', auth, function(req, res) {
   if (!user) return res.status(400).json({ error: 'Не врем.' }); deleteUserData(req.userId); saveDB(); res.json({ message: 'Удалён' });
 });
 app.post('/api/keep-alive', auth, function(req, res) { res.json({ alive: true }); });
+
+// ============ ОНЛАЙН/ПЕЧАТАНИЕ ============
+app.post('/api/user/online', auth, function(req, res) {
+  dbRun("UPDATE users SET is_online=1, last_seen=datetime('now','+3 hours') WHERE id=?", [req.userId]);
+  res.json({ ok: true });
+});
+
+app.post('/api/user/offline', auth, function(req, res) {
+  dbRun("UPDATE users SET is_online=0, last_seen=datetime('now','+3 hours') WHERE id=?", [req.userId]);
+  res.json({ ok: true });
+});
+
+app.post('/api/user/typing', auth, function(req, res) {
+  var toId = req.body.to_id;
+  if (!toId) return res.status(400).json({ error: 'to_id required' });
+  dbRun("UPDATE users SET is_typing=1, typing_to=? WHERE id=?", [toId, req.userId]);
+  res.json({ ok: true });
+});
+
+app.post('/api/user/stop-typing', auth, function(req, res) {
+  dbRun("UPDATE users SET is_typing=0, typing_to=NULL WHERE id=?", [req.userId]);
+  res.json({ ok: true });
+});
+
+app.get('/api/user/status/:userId', auth, function(req, res) {
+  var user = dbGet('SELECT is_online, last_seen, is_typing, typing_to FROM users WHERE id=?', [req.params.userId]);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ 
+    is_online: user.is_online || 0,
+    last_seen: user.last_seen,
+    is_typing: user.is_typing || 0,
+    typing_to: user.typing_to
+  });
+});
+
+// ============ АДМИН: СТАТИСТИКА И УДАЛЕНИЕ ============
+app.get('/api/admin/stats', auth, adminAuth, function(req, res) {
+  var totalUsers = dbGet('SELECT COUNT(*) as count FROM users WHERE id!=?', [req.userId]);
+  var totalTemp = dbGet('SELECT COUNT(*) as count FROM users WHERE is_temp=1');
+  var totalMessages = dbGet('SELECT COUNT(*) as count FROM messages');
+  var totalFiles = dbGet('SELECT COUNT(*) as count FROM files');
+  
+  res.json({
+    total_users: totalUsers?.count || 0,
+    temp_users: totalTemp?.count || 0,
+    total_messages: totalMessages?.count || 0,
+    total_files: totalFiles?.count || 0
+  });
+});
+
+app.delete('/api/admin/user/:userId', auth, adminAuth, function(req, res) {
+  var userId = parseInt(req.params.userId);
+  
+  if (userId === req.userId) {
+    return res.status(400).json({ error: 'Нельзя удалить самого себя' });
+  }
+  
+  var user = dbGet('SELECT * FROM users WHERE id=?', [userId]);
+  if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+  
+  deleteUserData(userId);
+  saveDB();
+  
+  res.json({ ok: true, message: 'Пользователь удален' });
+});
 
 // ============ АВАТАРКИ ============
 app.post('/api/avatar', auth, uploadAvatar.single('avatar'), function(req, res) {
@@ -607,11 +680,14 @@ app.get('/api/stickers/:packId', function(req, res) {
 app.get('/api/unread', auth, function(req, res) {
   res.json({ count: (dbGet('SELECT COUNT(*) as c FROM messages WHERE receiver_id=? AND is_read=0 AND deleted_for_receiver=0', [req.userId]) || {}).c || 0 });
 });
+
 app.get('/api/users', auth, function(req, res) {
-  res.json({ users: dbAll('SELECT id, username, email, avatar, is_temp FROM users WHERE id!=?', [req.userId]) });
+  var users = dbAll('SELECT id, username, email, avatar, is_temp, is_online, last_seen, is_typing FROM users WHERE id!=?', [req.userId]);
+  res.json({ users: users });
 });
+
 app.get('/api/user', auth, function(req, res) {
-  res.json({ user: dbGet('SELECT id, username, email, avatar, is_temp FROM users WHERE id=?', [req.userId]) });
+  res.json({ user: dbGet('SELECT id, username, email, avatar, is_temp, is_online, last_seen FROM users WHERE id=?', [req.userId]) });
 });
 
 // ============ МАРШРУТЫ СТРАНИЦ ============
