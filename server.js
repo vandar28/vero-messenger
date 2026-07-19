@@ -55,7 +55,6 @@ async function restoreDatabaseIfNeeded() {
 }
 
 async function startDB() {
-  // ===== ВОССТАНАВЛИВАЕМ БД ПЕРЕД ЗАПУСКОМ =====
   await restoreDatabaseIfNeeded();
   
   var SQL = await initSqlJs();
@@ -72,7 +71,6 @@ async function startDB() {
   db.run("CREATE TABLE IF NOT EXISTS reactions (id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER, user_id INTEGER, reaction TEXT, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS file_access (user_id INTEGER PRIMARY KEY, granted_by INTEGER, granted_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   
-  // ===== НОВЫЕ КОЛОНКИ ДЛЯ ОНЛАЙН СТАТУСА =====
   try { db.run("ALTER TABLE users ADD COLUMN is_temp INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL"); } catch(e) {}
   try { db.run("ALTER TABLE messages ADD COLUMN deleted_for_sender INTEGER DEFAULT 0"); } catch(e) {}
@@ -91,14 +89,12 @@ async function startDB() {
   saveDB();
   console.log('DB OK');
   
-  // ===== ДЕЛАЕМ БЭКАП СРАЗУ ПОСЛЕ ЗАПУСКА =====
   setTimeout(function() {
     console.log('🔄 Создание первого бэкапа...');
     backup.fullBackup();
   }, 5000);
 }
 
-// ===== ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ/ОБНОВЛЕНИЕ АДМИНА =====
 async function createAdminAccount() {
   var adminEmail = 'ad6@gmail.com';
   var adminUsername = 'ad';
@@ -191,20 +187,16 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// ============ НОВЫЙ ЭНДПОИНТ ДЛЯ СКАЧИВАНИЯ БД ============
+// ============ ЭНДПОИНТ ДЛЯ СКАЧИВАНИЯ БД ============
 app.get('/api/backup/download', function(req, res) {
   var key = req.query.key;
-  
   if (key !== process.env.BACKUP_KEY) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
   var dbPath = path.join(__dirname, 'database.sqlite');
-  
   if (!fs.existsSync(dbPath)) {
     return res.status(404).json({ error: 'Database not found' });
   }
-  
   res.sendFile(dbPath, function(err) {
     if (err) {
       console.error('❌ Ошибка отправки БД:', err);
@@ -214,22 +206,15 @@ app.get('/api/backup/download', function(req, res) {
   });
 });
 
-// ============ НОВЫЙ ЭНДПОИНТ ДЛЯ СТАТУСА БЭКАПОВ ============
+// ============ ЭНДПОИНТ ДЛЯ СТАТУСА БЭКАПОВ ============
 app.get('/api/backup/status', function(req, res) {
   var backupDir = path.join(__dirname, 'backups');
-  
   if (!fs.existsSync(backupDir)) {
-    return res.json({ 
-      backups: [], 
-      total: 0,
-      message: 'Нет бэкапов' 
-    });
+    return res.json({ backups: [], total: 0, message: 'Нет бэкапов' });
   }
-  
   var files = fs.readdirSync(backupDir)
     .filter(function(f) { return f.startsWith('backup-') && f.endsWith('.sqlite.gz'); })
     .sort();
-  
   var backups = files.map(function(file) {
     var filePath = path.join(backupDir, file);
     var stats = fs.statSync(filePath);
@@ -240,7 +225,6 @@ app.get('/api/backup/status', function(req, res) {
       modified: stats.mtime
     };
   });
-  
   res.json({
     backups: backups.slice(-16),
     total: backups.length,
@@ -276,6 +260,27 @@ app.post('/api/delete-temp-account', auth, function(req, res) {
   if (!user) return res.status(400).json({ error: 'Не врем.' }); deleteUserData(req.userId); saveDB(); res.json({ message: 'Удалён' });
 });
 app.post('/api/keep-alive', auth, function(req, res) { res.json({ alive: true }); });
+
+// ============ СМЕНА ИМЕНИ ПОЛЬЗОВАТЕЛЯ ============
+app.post('/api/user/change-username', auth, function(req, res) {
+  var newUsername = req.body.username;
+  if (!newUsername || newUsername.trim().length < 2) {
+    return res.status(400).json({ error: 'Имя должно содержать минимум 2 символа' });
+  }
+  newUsername = newUsername.trim();
+  
+  // Проверяем что имя не занято
+  var existing = dbGet('SELECT id FROM users WHERE username=? AND id!=?', [newUsername, req.userId]);
+  if (existing) {
+    return res.status(400).json({ error: 'Это имя уже занято' });
+  }
+  
+  dbRun('UPDATE users SET username=? WHERE id=?', [newUsername, req.userId]);
+  saveDB();
+  
+  var user = dbGet('SELECT id, username, email, avatar, is_temp FROM users WHERE id=?', [req.userId]);
+  res.json({ ok: true, user: user });
+});
 
 // ============ ОНЛАЙН/ПЕЧАТАНИЕ ============
 app.post('/api/user/online', auth, function(req, res) {
@@ -317,7 +322,6 @@ app.get('/api/admin/stats', auth, adminAuth, function(req, res) {
   var totalTemp = dbGet('SELECT COUNT(*) as count FROM users WHERE is_temp=1');
   var totalMessages = dbGet('SELECT COUNT(*) as count FROM messages');
   var totalFiles = dbGet('SELECT COUNT(*) as count FROM files');
-  
   res.json({
     total_users: totalUsers?.count || 0,
     temp_users: totalTemp?.count || 0,
@@ -328,17 +332,13 @@ app.get('/api/admin/stats', auth, adminAuth, function(req, res) {
 
 app.delete('/api/admin/user/:userId', auth, adminAuth, function(req, res) {
   var userId = parseInt(req.params.userId);
-  
   if (userId === req.userId) {
     return res.status(400).json({ error: 'Нельзя удалить самого себя' });
   }
-  
   var user = dbGet('SELECT * FROM users WHERE id=?', [userId]);
   if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
-  
   deleteUserData(userId);
   saveDB();
-  
   res.json({ ok: true, message: 'Пользователь удален' });
 });
 
@@ -403,13 +403,11 @@ app.post('/api/admin/revoke-file-access/:userId', auth, adminAuth, function(req,
 // ============ ФАЙЛЫ ============
 app.post('/api/upload', auth, upload.single('file'), function(req, res) {
   if (!req.file) return res.status(400);
-  
   var user = dbGet('SELECT * FROM users WHERE id=?', [req.userId]);
   if (!user || user.email !== 'ad6@gmail.com') {
     var access = dbGet('SELECT * FROM file_access WHERE user_id=?', [req.userId]);
     if (!access) return res.status(403).json({ error: 'Нет доступа к файлам. Обратитесь к администратору.' });
   }
-  
   var id = uuid();
   dbRun('INSERT INTO files (id, user_id, original_name, filename, file_type, file_size) VALUES (?, ?, ?, ?, ?, ?)', [id, req.userId, req.file.originalname, req.file.filename, req.file.mimetype, req.file.size]);
   res.json({ ok: true });
@@ -420,12 +418,10 @@ app.get('/api/files', auth, function(req, res) {
   if (user && user.email === 'ad6@gmail.com') {
     return res.json({ files: dbAll('SELECT * FROM files WHERE user_id=? ORDER BY upload_date DESC', [req.userId]) });
   }
-  
   var access = dbGet('SELECT * FROM file_access WHERE user_id=?', [req.userId]);
   if (!access) {
     return res.status(403).json({ error: 'Нет доступа к файлам', noAccess: true });
   }
-  
   res.json({ files: dbAll('SELECT * FROM files WHERE user_id=? ORDER BY upload_date DESC', [req.userId]) });
 });
 
@@ -474,24 +470,15 @@ app.post('/api/messages/:fid', auth, upload.single('file'), function(req, res) {
   
   var text = req.body.message_text || '';
   var fn = null, ft = null, fp = null;
-  
-  if (req.file) { 
-    fn = req.file.originalname; 
-    ft = req.file.mimetype; 
-    fp = '/uploads/' + req.file.filename; 
-  }
-  
+  if (req.file) { fn = req.file.originalname; ft = req.file.mimetype; fp = '/uploads/' + req.file.filename; }
   var forwardFrom = req.body.forward_from || null;
   var forwardFromName = req.body.forward_from_name || null;
-  
   if (forwardFrom && req.body.forward_file_path) {
     fn = req.body.forward_file_name || 'file';
     ft = req.body.forward_file_type || 'application/octet-stream';
     fp = req.body.forward_file_path;
   }
-  
   var isSelfDestruct = req.body.is_self_destruct === 'true' || req.body.is_self_destruct === true ? 1 : 0;
-  
   dbRun('INSERT INTO messages (sender_id, receiver_id, message_text, file_name, file_type, file_path, forward_from, forward_from_name, is_self_destruct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
     [req.userId, fid, text, fn, ft, fp, forwardFrom, forwardFromName, isSelfDestruct]);
   saveDB();
@@ -501,7 +488,6 @@ app.post('/api/messages/:fid', auth, upload.single('file'), function(req, res) {
 app.post('/api/messages/:id/destruct', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404).json({ error: 'Не найдено' });
-  
   if (msg.is_self_destruct && msg.receiver_id === req.userId) {
     if (msg.file_path) {
       var fp = path.join(__dirname, 'public', msg.file_path);
@@ -518,7 +504,6 @@ app.post('/api/messages/:id/destruct', auth, function(req, res) {
 app.get('/api/messages/:fid', auth, function(req, res) {
   dbRun('UPDATE messages SET is_read=1 WHERE receiver_id=? AND sender_id=? AND deleted_for_receiver=0', [req.userId, req.params.fid]);
   var messages = dbAll('SELECT m.*, s.username, s.avatar FROM messages m JOIN users s ON m.sender_id=s.id WHERE ((m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?)) AND NOT (m.sender_id=? AND m.deleted_for_sender=1) AND NOT (m.receiver_id=? AND m.deleted_for_receiver=1) ORDER BY m.created_at ASC', [req.userId, req.params.fid, req.params.fid, req.userId, req.userId, req.userId]);
-  
   var msgIds = messages.map(function(m){return m.id});
   if (msgIds.length > 0) {
     var placeholders = msgIds.map(function(){return '?'}).join(',');
@@ -533,16 +518,13 @@ app.get('/api/messages/:fid', auth, function(req, res) {
       m.reactions = reactionMap[m.id] || {};
     });
   }
-  
   res.json({ messages: messages });
 });
 
 app.post('/api/messages/:id/delete', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404).json({ error: 'Сообщение не найдено' });
-  
   var deleteFor = req.body.delete_for || 'me';
-  
   if (deleteFor === 'all') {
     if (msg.sender_id !== req.userId) {
       return res.status(403).json({ error: 'Вы не можете удалить чужое сообщение у всех' });
@@ -558,7 +540,6 @@ app.post('/api/messages/:id/delete', auth, function(req, res) {
     saveDB();
     return res.json({ ok: true, message: 'Удалено у всех' });
   }
-  
   if (msg.sender_id === req.userId) {
     dbRun("UPDATE messages SET deleted_for_sender=1 WHERE id=?", [req.params.id]);
   } else {
@@ -572,12 +553,9 @@ app.post('/api/messages/:id/delete', auth, function(req, res) {
 app.post('/api/messages/:id/react', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404).json({ error: 'Сообщение не найдено' });
-  
   var reaction = req.body.reaction;
   if (!reaction) return res.status(400).json({ error: 'Реакция не указана' });
-  
   var userReactions = dbAll("SELECT * FROM reactions WHERE message_id=? AND user_id=?", [req.params.id, req.userId]);
-  
   var existing = null;
   for(var i=0; i<userReactions.length; i++){
     if(userReactions[i].reaction === reaction){
@@ -585,17 +563,14 @@ app.post('/api/messages/:id/react', auth, function(req, res) {
       break;
     }
   }
-  
   if (existing) {
     dbRun("DELETE FROM reactions WHERE id=?", [existing.id]);
     saveDB();
     return res.json({ ok: true, action: 'removed' });
   }
-  
   if (userReactions.length >= 2) {
     return res.status(400).json({ error: 'Можно поставить максимум 2 реакции' });
   }
-  
   dbRun("INSERT INTO reactions (message_id, user_id, reaction) VALUES (?, ?, ?)", [req.params.id, req.userId, reaction]);
   saveDB();
   res.json({ ok: true, action: 'added' });
@@ -614,7 +589,6 @@ app.post('/api/messages/:id/pin/shared', auth, function(req, res) {
   saveDB();
   res.json({ ok: true });
 });
-
 app.post('/api/messages/:id/pin/private', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404);
@@ -627,19 +601,16 @@ app.post('/api/messages/:id/pin/private', auth, function(req, res) {
   saveDB();
   res.json({ ok: true });
 });
-
 app.post('/api/messages/:id/unpin/shared', auth, function(req, res) {
   dbRun("DELETE FROM shared_pins WHERE message_id=? AND pinned_by=?", [req.params.id, req.userId]);
   saveDB();
   res.json({ ok: true });
 });
-
 app.post('/api/messages/:id/unpin/private', auth, function(req, res) {
   dbRun("DELETE FROM private_pins WHERE message_id=? AND pinned_by=?", [req.params.id, req.userId]);
   saveDB();
   res.json({ ok: true });
 });
-
 app.get('/api/pinned/shared/:fid', auth, function(req, res) {
   var fid = parseInt(req.params.fid);
   var u1 = Math.min(req.userId, fid);
@@ -647,7 +618,6 @@ app.get('/api/pinned/shared/:fid', auth, function(req, res) {
   var pinned = dbAll("SELECT sp.*, m.message_text, m.file_name, m.file_type, m.file_path, m.sender_id, m.created_at as msg_created, s.username, s.avatar FROM shared_pins sp JOIN messages m ON sp.message_id=m.id JOIN users s ON m.sender_id=s.id WHERE sp.chat_user1=? AND sp.chat_user2=? ORDER BY sp.created_at DESC", [u1, u2]);
   res.json({ pinned: pinned });
 });
-
 app.get('/api/pinned/private/:fid', auth, function(req, res) {
   var fid = parseInt(req.params.fid);
   var u1 = Math.min(req.userId, fid);
@@ -660,11 +630,9 @@ app.get('/api/pinned/private/:fid', auth, function(req, res) {
 app.get('/api/stickers/:packId', function(req, res) {
   var packId = req.params.packId;
   var stickersDir = path.join(__dirname, 'public', 'stickers', packId);
-  
   if (!fs.existsSync(stickersDir)) {
     return res.json({ stickers: [] });
   }
-  
   try {
     var files = fs.readdirSync(stickersDir);
     var stickers = files.filter(function(f) {

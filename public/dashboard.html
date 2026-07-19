@@ -694,6 +694,7 @@ body.chat-open #tc {
       <input type="file" id="settingsAvatarInput" accept="image/*" style="display:none" onchange="uploadNewAvatar(event)">
     </div>
     <button class="upload-new-btn" onclick="document.getElementById('settingsAvatarInput').click()">📷 Загрузить новую аватарку</button>
+    <button class="upload-new-btn" onclick="changeUsername()" style="margin-bottom:8px;background:var(--green-bg);color:var(--green);border-color:var(--green)">✏️ Сменить имя</button>
     <div class="section-title">История аватарок</div>
     <div class="avatar-history" id="avatarHistory"><div class="empty-history">Загрузка...</div></div>
     <button class="close-btn" onclick="closeSettings()">Закрыть</button>
@@ -801,6 +802,37 @@ function formatLastSeen(lastSeen) {
     if (diff < 86400) return Math.floor(diff/3600) + ' ч назад';
     if (diff < 172800) return 'вчера в ' + date.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
     return Math.floor(diff/86400) + ' дн назад';
+}
+
+// ===== СМЕНА ИМЕНИ =====
+function changeUsername() {
+    var newName = prompt('Введите новое имя пользователя:', U.username);
+    if (!newName) return;
+    newName = newName.trim();
+    if (newName.length < 2) {
+        alert('Имя должно содержать минимум 2 символа');
+        return;
+    }
+    
+    api('/api/user/change-username', {
+        method: 'POST',
+        body: { username: newName }
+    }).then(function(r){ return r.json() }).then(function(d){
+        if (d.ok) {
+            U.username = d.user.username;
+            localStorage.setItem('user', JSON.stringify(U));
+            document.getElementById('un').textContent = U.username;
+            alert('✅ Имя изменено на: ' + d.user.username);
+            var activeTab = document.querySelector('.tab.active');
+            if (activeTab) {
+                st(activeTab.dataset.t, activeTab);
+            }
+        } else if (d.error) {
+            alert('❌ ' + d.error);
+        }
+    }).catch(function(err){
+        alert('❌ Ошибка при смене имени');
+    });
 }
 
 api('/api/check-file-access').then(function(r){return r.json()}).then(function(d){
@@ -1080,6 +1112,8 @@ function lcl(){
 }
 
 // ========== ОТКРЫТИЕ ЧАТА ==========
+var typingTimeout = null;
+
 function oc(id,name,avatar){
     if(ti){clearInterval(ti);ti=null}pastedFiles=[];selectedMessages={};ct={id:id,name:name,avatar:avatar};cachedMessages={};selfDestructMode=false;photoSendMode=null;searchResults=[];searchIndex=0;
     
@@ -1089,24 +1123,6 @@ function oc(id,name,avatar){
     var fs = document.createElement('div');
     fs.className = 'chat-fullscreen';
     fs.id = 'chatFullscreen';
-    
-    // Получаем статус собеседника для отображения в заголовке
-    var statusText = '';
-    api('/api/user/status/' + id).then(function(r){return r.json()}).then(function(status){
-        var statusEl = document.querySelector('.chat-status');
-        if (statusEl) {
-            if (status.is_online) {
-                statusEl.textContent = '🟢 Онлайн';
-                statusEl.style.color = 'var(--green)';
-            } else if (status.last_seen) {
-                statusEl.textContent = 'был(а) ' + formatLastSeen(status.last_seen);
-                statusEl.style.color = 'var(--text-muted)';
-            } else {
-                statusEl.textContent = 'Неизвестно';
-                statusEl.style.color = 'var(--text-muted)';
-            }
-        }
-    }).catch(function(){});
     
     fs.innerHTML = 
     '<div class="chat-panel">'+
@@ -1138,14 +1154,14 @@ function oc(id,name,avatar){
     document.getElementById('vidBtn').onclick=function(){startRec('video')};
     document.getElementById('stickerBtn').onclick=function(){openStickerModal()};
     
-    // ===== ИНДИКАТОР ПЕЧАТАЕТ (ПОКАЗЫВАЕТСЯ ТОЛЬКО ДЛЯ СОБЕСЕДНИКА) =====
+    // ===== ИНДИКАТОР ПЕЧАТАЕТ =====
     var typingIndicator = document.createElement('div');
     typingIndicator.id = 'typingIndicator';
     typingIndicator.style.cssText = 'font-size:10px;color:var(--text-muted);padding:4px 8px;font-style:italic;display:none';
     var cm = document.getElementById('cm');
     if (cm) cm.appendChild(typingIndicator);
     
-    // Отправляем статус "печатает" когда пользователь печатает
+    // Отправка статуса "печатает"
     document.getElementById('mi').addEventListener('input', function() {
         if (typingTimeout) clearTimeout(typingTimeout);
         api('/api/user/typing', { method: 'POST', body: { to_id: id } }).catch(function(){});
@@ -1154,10 +1170,26 @@ function oc(id,name,avatar){
         }, 3000);
     });
     
-    // Останавливаем "печатает" при отправке
     document.getElementById('sb').addEventListener('click', function() {
         api('/api/user/stop-typing', {method:'POST'}).catch(function(){});
     });
+    
+    // Получение статуса собеседника в шапке
+    api('/api/user/status/' + id).then(function(r){return r.json()}).then(function(status){
+        var statusEl = document.querySelector('.chat-status');
+        if (statusEl) {
+            if (status.is_online) {
+                statusEl.textContent = '🟢 Онлайн';
+                statusEl.style.color = 'var(--green)';
+            } else if (status.last_seen) {
+                statusEl.textContent = 'был(а) ' + formatLastSeen(status.last_seen);
+                statusEl.style.color = 'var(--text-muted)';
+            } else {
+                statusEl.textContent = 'Неизвестно';
+                statusEl.style.color = 'var(--text-muted)';
+            }
+        }
+    }).catch(function(){});
     
     lm(id);
     ti=setInterval(function(){lm(id,true)},3000);
@@ -1536,7 +1568,7 @@ function lm(id,silent,callback){
         if(bottom||!silent)c.scrollTop=c.scrollHeight;
         if(callback)callback();
         
-        // ===== ОБНОВЛЯЕМ СТАТУС В ШАПКЕ ЧАТА =====
+        // ===== ОБНОВЛЕНИЕ СТАТУСА В ШАПКЕ И ИНДИКАТОРА ПЕЧАТАЕТ =====
         api('/api/user/status/' + id).then(function(r){return r.json()}).then(function(status){
             var statusEl = document.querySelector('.chat-status');
             if (statusEl) {
@@ -1552,10 +1584,9 @@ function lm(id,silent,callback){
                 }
             }
             
-            // ===== ИНДИКАТОР ПЕЧАТАЕТ (ТОЛЬКО ДЛЯ СОБЕСЕДНИКА) =====
+            // Индикатор печатает
             var typingEl = document.getElementById('typingIndicator');
             if (typingEl) {
-                // Показываем "печатает" ТОЛЬКО если собеседник печатает и печатает именно нам
                 if (status.is_typing && status.typing_to == U.id) {
                     typingEl.textContent = '✏️ Печатает...';
                     typingEl.style.display = 'block';
