@@ -1090,11 +1090,30 @@ function oc(id,name,avatar){
     fs.className = 'chat-fullscreen';
     fs.id = 'chatFullscreen';
     
+    // Получаем статус собеседника для отображения в заголовке
+    var statusText = '';
+    api('/api/user/status/' + id).then(function(r){return r.json()}).then(function(status){
+        var statusEl = document.querySelector('.chat-status');
+        if (statusEl) {
+            if (status.is_online) {
+                statusEl.textContent = '🟢 Онлайн';
+                statusEl.style.color = 'var(--green)';
+            } else if (status.last_seen) {
+                statusEl.textContent = 'был(а) ' + formatLastSeen(status.last_seen);
+                statusEl.style.color = 'var(--text-muted)';
+            } else {
+                statusEl.textContent = 'Неизвестно';
+                statusEl.style.color = 'var(--text-muted)';
+            }
+        }
+    }).catch(function(){});
+    
     fs.innerHTML = 
     '<div class="chat-panel">'+
     '<div class="chat-header">'+
     '<div class="avatar-sm" onclick="viewUserAvatars('+id+',\''+name+'\')">'+av(avatar)+'</div>'+
-    '<h2>'+name+'</h2>'+
+    '<div><h2>'+name+'</h2>'+
+    '<div class="chat-status" style="font-size:9px;color:var(--text-muted);margin-top:-2px">загрузка...</div></div>'+
     '<button class="btn btn-gray" onclick="showPinned('+id+')" style="font-size:9px;padding:4px 8px" title="Закреплённые">📌</button>'+
     '<button class="btn btn-gray" onclick="openMediaModal('+id+')" style="font-size:9px;padding:4px 8px" title="Медиа">📸</button>'+
     '<button class="btn btn-gray" onclick="toggleSearch()" style="font-size:9px;padding:4px 8px" title="Поиск">🔍</button>'+
@@ -1105,7 +1124,7 @@ function oc(id,name,avatar){
     '<div class="chat-container"><div class="chat-messages" id="cm"><div class="empty">Загрузка...</div></div>'+
     '<div class="paste-preview" id="pastePreview"></div>'+
     '<div class="photo-send-options" id="photoSendOptions"><span style="font-size:9px;color:var(--text-muted);margin-right:3px">Режим фото:</span><button class="photo-send-option normal" id="photoNormalBtn" onclick="selectPhotoMode(\'normal\')">📷 Обычное</button><button class="photo-send-option destruct" id="photoDestructBtn" onclick="selectPhotoMode(\'destruct\')">🔥 Одноразовое</button></div>'+
-    '<div class="recording-bar" id="recBar">Запись... <button class="btn" onclick="stopRecording()" style="background:#fff;color:var(--red);margin-left:6px;padding:4px 10px;font-size:10px">Стоп</button></div>'+
+    '<div class="recording-bar" id="recBar">⏺️ Запись... <span id="recTime">0:00</span> <button class="btn" onclick="stopRecording()" style="background:#fff;color:var(--red);margin-left:6px;padding:4px 10px;font-size:10px">Стоп</button></div>'+
     '<div class="chat-input-area"><input type="text" id="mi" placeholder="Сообщение..."><input type="file" id="cf" style="display:none" multiple accept="image/*,video/*"><button class="btn btn-gray" id="ab" style="padding:6px 10px;font-size:10px">📎</button><button class="btn btn-gray" id="stickerBtn" style="padding:6px 10px;font-size:10px">😊</button><button class="btn btn-gray" id="micBtn" style="padding:6px 10px;font-size:10px">🎤</button><button class="btn btn-gray" id="vidBtn" style="padding:6px 10px;font-size:10px">📹</button><button class="btn" id="sb" style="padding:6px 14px;font-size:10px">Отпр.</button></div></div>'+
     '</div>';
     
@@ -1119,14 +1138,14 @@ function oc(id,name,avatar){
     document.getElementById('vidBtn').onclick=function(){startRec('video')};
     document.getElementById('stickerBtn').onclick=function(){openStickerModal()};
     
-    // ===== ИНДИКАТОР ПЕЧАТАЕТ =====
-    var typingTimeout = null;
+    // ===== ИНДИКАТОР ПЕЧАТАЕТ (ПОКАЗЫВАЕТСЯ ТОЛЬКО ДЛЯ СОБЕСЕДНИКА) =====
     var typingIndicator = document.createElement('div');
     typingIndicator.id = 'typingIndicator';
     typingIndicator.style.cssText = 'font-size:10px;color:var(--text-muted);padding:4px 8px;font-style:italic;display:none';
     var cm = document.getElementById('cm');
     if (cm) cm.appendChild(typingIndicator);
     
+    // Отправляем статус "печатает" когда пользователь печатает
     document.getElementById('mi').addEventListener('input', function() {
         if (typingTimeout) clearTimeout(typingTimeout);
         api('/api/user/typing', { method: 'POST', body: { to_id: id } }).catch(function(){});
@@ -1135,6 +1154,7 @@ function oc(id,name,avatar){
         }, 3000);
     });
     
+    // Останавливаем "печатает" при отправке
     document.getElementById('sb').addEventListener('click', function() {
         api('/api/user/stop-typing', {method:'POST'}).catch(function(){});
     });
@@ -1516,10 +1536,26 @@ function lm(id,silent,callback){
         if(bottom||!silent)c.scrollTop=c.scrollHeight;
         if(callback)callback();
         
-        // ===== ИНДИКАТОР ПЕЧАТАЕТ =====
+        // ===== ОБНОВЛЯЕМ СТАТУС В ШАПКЕ ЧАТА =====
         api('/api/user/status/' + id).then(function(r){return r.json()}).then(function(status){
+            var statusEl = document.querySelector('.chat-status');
+            if (statusEl) {
+                if (status.is_online) {
+                    statusEl.textContent = '🟢 Онлайн';
+                    statusEl.style.color = 'var(--green)';
+                } else if (status.last_seen) {
+                    statusEl.textContent = 'был(а) ' + formatLastSeen(status.last_seen);
+                    statusEl.style.color = 'var(--text-muted)';
+                } else {
+                    statusEl.textContent = 'Неизвестно';
+                    statusEl.style.color = 'var(--text-muted)';
+                }
+            }
+            
+            // ===== ИНДИКАТОР ПЕЧАТАЕТ (ТОЛЬКО ДЛЯ СОБЕСЕДНИКА) =====
             var typingEl = document.getElementById('typingIndicator');
             if (typingEl) {
+                // Показываем "печатает" ТОЛЬКО если собеседник печатает и печатает именно нам
                 if (status.is_typing && status.typing_to == U.id) {
                     typingEl.textContent = '✏️ Печатает...';
                     typingEl.style.display = 'block';
