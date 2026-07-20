@@ -3,5 +3,6 @@ buffer/
 database.sqlite
 .env
 temp_backups/
+temp/
 *.log
 .DS_Store

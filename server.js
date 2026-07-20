@@ -11,6 +11,9 @@ var initSqlJs = require('sql.js');
 // ===== ПОДКЛЮЧАЕМ СИСТЕМУ БЭКАПОВ =====
 var backup = require('./backup');
 
+// ===== ПОДКЛЮЧАЕМ ХРАНИЛИЩЕ EVOLUTION OBJECT STORAGE =====
+const storage = require('./storage');
+
 var app = express();
 var PORT = process.env.PORT || 3000;
 var JWT_SECRET = process.env.JWT_SECRET || 'secret123';
@@ -55,6 +58,7 @@ async function restoreDatabaseIfNeeded() {
 }
 
 async function startDB() {
+  // ===== ВОССТАНАВЛИВАЕМ БД ПЕРЕД ЗАПУСКОМ =====
   await restoreDatabaseIfNeeded();
   
   var SQL = await initSqlJs();
@@ -71,6 +75,7 @@ async function startDB() {
   db.run("CREATE TABLE IF NOT EXISTS reactions (id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER, user_id INTEGER, reaction TEXT, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS file_access (user_id INTEGER PRIMARY KEY, granted_by INTEGER, granted_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   
+  // ===== НОВЫЕ КОЛОНКИ ДЛЯ ОНЛАЙН СТАТУСА =====
   try { db.run("ALTER TABLE users ADD COLUMN is_temp INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL"); } catch(e) {}
   try { db.run("ALTER TABLE messages ADD COLUMN deleted_for_sender INTEGER DEFAULT 0"); } catch(e) {}
@@ -89,12 +94,14 @@ async function startDB() {
   saveDB();
   console.log('DB OK');
   
+  // ===== ДЕЛАЕМ БЭКАП СРАЗУ ПОСЛЕ ЗАПУСКА =====
   setTimeout(function() {
     console.log('🔄 Создание первого бэкапа...');
     backup.fullBackup();
   }, 5000);
 }
 
+// ===== ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ/ОБНОВЛЕНИЕ АДМИНА =====
 async function createAdminAccount() {
   var adminEmail = 'ad6@gmail.com';
   var adminUsername = 'ad';
@@ -156,27 +163,60 @@ function dbAll(sql, p) {
 var UPLOADS = './public/uploads';
 var AVATARS = './public/avatars';
 var STICKERS_DIR = './public/stickers';
+
+// ===== СОЗДАЕМ ПАПКИ ЕСЛИ ИХ НЕТ =====
 if (!fs.existsSync(UPLOADS)) fs.mkdirSync(UPLOADS, { recursive: true });
 if (!fs.existsSync(AVATARS)) fs.mkdirSync(AVATARS, { recursive: true });
 if (!fs.existsSync(STICKERS_DIR)) fs.mkdirSync(STICKERS_DIR, { recursive: true });
 
-var storage = multer.diskStorage({
-  destination: function(req, file, cb) { cb(null, UPLOADS); },
-  filename: function(req, file, cb) { cb(null, Date.now() + '_' + file.originalname); }
+// ===== НАСТРОЙКА MULTER ДЛЯ ВРЕМЕННОГО ХРАНЕНИЯ =====
+var storageMulter = multer.diskStorage({
+  destination: function(req, file, cb) { 
+    // Используем временную папку для загрузки
+    const tempDir = './temp';
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    cb(null, tempDir); 
+  },
+  filename: function(req, file, cb) { 
+    cb(null, Date.now() + '_' + file.originalname); 
+  }
 });
 
-var avatarStorage = multer.diskStorage({
-  destination: function(req, file, cb) { cb(null, AVATARS); },
-  filename: function(req, file, cb) { cb(null, 'avatar_' + req.userId + '_' + Date.now() + path.extname(file.originalname)); }
+var avatarStorageMulter = multer.diskStorage({
+  destination: function(req, file, cb) { 
+    const tempDir = './temp';
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    cb(null, tempDir); 
+  },
+  filename: function(req, file, cb) { 
+    cb(null, 'avatar_' + req.userId + '_' + Date.now() + path.extname(file.originalname)); 
+  }
 });
 
-var upload = multer({ storage: storage, limits: { fileSize: 500 * 1024 * 1024 }, fileFilter: function(req, file, cb) { cb(null, true); } });
-var uploadAvatar = multer({ storage: avatarStorage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: function(req, file, cb) { if (file.mimetype.startsWith('image/')) cb(null, true); else cb(new Error('Only images')); } });
+// ===== НАСТРОЙКА MULTER =====
+var upload = multer({ 
+  storage: storageMulter, 
+  limits: { fileSize: 500 * 1024 * 1024 }, 
+  fileFilter: function(req, file, cb) { cb(null, true); } 
+});
+
+var uploadAvatar = multer({ 
+  storage: avatarStorageMulter, 
+  limits: { fileSize: 5 * 1024 * 1024 }, 
+  fileFilter: function(req, file, cb) { 
+    if (file.mimetype.startsWith('image/')) cb(null, true); 
+    else cb(new Error('Only images')); 
+  } 
+});
 
 function auth(req, res, next) {
   var token = (req.headers['authorization'] || '').split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token' });
-  jwt.verify(token, JWT_SECRET, function(err, u) { if (err) return res.status(403).json({ error: 'Bad token' }); req.userId = u.id; next(); });
+  jwt.verify(token, JWT_SECRET, function(err, u) { 
+    if (err) return res.status(403).json({ error: 'Bad token' }); 
+    req.userId = u.id; 
+    next(); 
+  });
 }
 
 function adminAuth(req, res, next) {
@@ -234,32 +274,95 @@ app.get('/api/backup/status', function(req, res) {
 
 // ============ АВТОРИЗАЦИЯ ============
 app.post('/api/register', uploadAvatar.single('avatar'), async function(req, res) {
-  var b = req.body; var isTemp = b.is_temp === 'true' || b.is_temp === true;
-  if (!isTemp) { var permCount = (dbGet('SELECT COUNT(*) as c FROM users WHERE is_temp=0') || {}).c || 0; if (permCount >= 12) return res.status(400).json({ error: 'Лимит' }); }
-  if (dbGet('SELECT id FROM users WHERE email=? OR username=?', [b.email, b.username])) return res.status(400).json({ error: 'Существует' });
+  var b = req.body; 
+  var isTemp = b.is_temp === 'true' || b.is_temp === true;
+  
+  if (!isTemp) { 
+    var permCount = (dbGet('SELECT COUNT(*) as c FROM users WHERE is_temp=0') || {}).c || 0; 
+    if (permCount >= 12) return res.status(400).json({ error: 'Лимит' }); 
+  }
+  
+  if (dbGet('SELECT id FROM users WHERE email=? OR username=?', [b.email, b.username])) {
+    return res.status(400).json({ error: 'Существует' });
+  }
+  
   var hash = isTemp ? '' : await bcrypt.hash(b.password || '', 10);
-  var avatarPath = req.file ? '/avatars/' + req.file.filename : null;
-  dbRun('INSERT INTO users (username, email, password, avatar, is_temp) VALUES (?, ?, ?, ?, ?)', [b.username, b.email, hash, avatarPath, isTemp ? 1 : 0]);
+  var avatarPath = null;
+  
+  if (req.file) {
+    const fileBuffer = fs.readFileSync(req.file.path);
+    avatarPath = await storage.uploadFileToS3(fileBuffer, req.file.filename, req.file.mimetype, 'avatars');
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+  }
+  
+  dbRun('INSERT INTO users (username, email, password, avatar, is_temp) VALUES (?, ?, ?, ?, ?)', 
+    [b.username, b.email, hash, avatarPath, isTemp ? 1 : 0]);
+  
   var user = dbGet('SELECT * FROM users WHERE email=?', [b.email]);
   if (avatarPath) dbRun('INSERT INTO avatars (user_id, avatar_path, is_active) VALUES (?, ?, 1)', [user.id, avatarPath]);
+  
   var token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: isTemp ? '24h' : '30d' });
-  res.json({ token: token, user: { id: user.id, username: b.username, email: b.email, avatar: avatarPath, is_temp: isTemp } });
+  res.json({ 
+    token: token, 
+    user: { 
+      id: user.id, 
+      username: b.username, 
+      email: b.email, 
+      avatar: avatarPath, 
+      is_temp: isTemp 
+    } 
+  });
 });
 
 app.post('/api/login', async function(req, res) {
-  var b = req.body; var user = dbGet('SELECT * FROM users WHERE email=?', [b.email]);
+  var b = req.body; 
+  var user = dbGet('SELECT * FROM users WHERE email=?', [b.email]);
   if (!user) return res.status(401).json({ error: 'Неверно' });
-  if (user.is_temp) { var token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '24h' }); return res.json({ token, user: { id: user.id, username: user.username, email: user.email, avatar: user.avatar, is_temp: true } }); }
-  if (!(await bcrypt.compare(b.password, user.password))) return res.status(401).json({ error: 'Неверно' });
+  
+  if (user.is_temp) { 
+    var token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '24h' }); 
+    return res.json({ 
+      token, 
+      user: { 
+        id: user.id, 
+        username: user.username, 
+        email: user.email, 
+        avatar: user.avatar, 
+        is_temp: true 
+      } 
+    }); 
+  }
+  
+  if (!(await bcrypt.compare(b.password, user.password))) {
+    return res.status(401).json({ error: 'Неверно' });
+  }
+  
   var token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '30d' });
-  res.json({ token, user: { id: user.id, username: user.username, email: user.email, avatar: user.avatar, is_temp: false } });
+  res.json({ 
+    token, 
+    user: { 
+      id: user.id, 
+      username: user.username, 
+      email: user.email, 
+      avatar: user.avatar, 
+      is_temp: false 
+    } 
+  });
 });
 
 app.post('/api/delete-temp-account', auth, function(req, res) {
   var user = dbGet('SELECT * FROM users WHERE id=? AND is_temp=1', [req.userId]);
-  if (!user) return res.status(400).json({ error: 'Не врем.' }); deleteUserData(req.userId); saveDB(); res.json({ message: 'Удалён' });
+  if (!user) return res.status(400).json({ error: 'Не врем.' }); 
+  deleteUserData(req.userId); 
+  saveDB(); 
+  res.json({ message: 'Удалён' });
 });
-app.post('/api/keep-alive', auth, function(req, res) { res.json({ alive: true }); });
+
+app.post('/api/keep-alive', auth, function(req, res) { 
+  res.json({ alive: true }); 
+});
 
 // ============ СМЕНА ИМЕНИ ПОЛЬЗОВАТЕЛЯ ============
 app.post('/api/user/change-username', auth, function(req, res) {
@@ -269,7 +372,6 @@ app.post('/api/user/change-username', auth, function(req, res) {
   }
   newUsername = newUsername.trim();
   
-  // Проверяем что имя не занято
   var existing = dbGet('SELECT id FROM users WHERE username=? AND id!=?', [newUsername, req.userId]);
   if (existing) {
     return res.status(400).json({ error: 'Это имя уже занято' });
@@ -343,16 +445,36 @@ app.delete('/api/admin/user/:userId', auth, adminAuth, function(req, res) {
 });
 
 // ============ АВАТАРКИ ============
-app.post('/api/avatar', auth, uploadAvatar.single('avatar'), function(req, res) {
-  if (!req.file) return res.status(400).json({ error: 'No file' });
-  var avatarPath = '/avatars/' + req.file.filename;
-  dbRun("UPDATE avatars SET is_active=0 WHERE user_id=? AND is_active=1", [req.userId]);
-  dbRun('INSERT INTO avatars (user_id, avatar_path, is_active) VALUES (?, ?, 1)', [req.userId, avatarPath]);
-  dbRun('UPDATE users SET avatar=? WHERE id=?', [avatarPath, req.userId]);
-  res.json({ avatar: avatarPath });
+app.post('/api/avatar', auth, uploadAvatar.single('avatar'), async function(req, res) {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+    
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const avatarPath = await storage.uploadFileToS3(fileBuffer, req.file.filename, req.file.mimetype, 'avatars');
+    
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    dbRun("UPDATE avatars SET is_active=0 WHERE user_id=? AND is_active=1", [req.userId]);
+    dbRun('INSERT INTO avatars (user_id, avatar_path, is_active) VALUES (?, ?, 1)', [req.userId, avatarPath]);
+    dbRun('UPDATE users SET avatar=? WHERE id=?', [avatarPath, req.userId]);
+    
+    res.json({ avatar: avatarPath });
+  } catch (error) {
+    console.error('❌ Ошибка загрузки аватарки:', error);
+    res.status(500).json({ error: 'Ошибка загрузки аватарки' });
+  }
 });
-app.get('/api/avatars', auth, function(req, res) { res.json({ avatars: dbAll("SELECT * FROM avatars WHERE user_id=? ORDER BY created_at DESC", [req.userId]) }); });
-app.get('/api/user/:userId/avatars', auth, function(req, res) { res.json({ avatars: dbAll("SELECT id, avatar_path, is_active, created_at FROM avatars WHERE user_id=? ORDER BY created_at DESC", [req.params.userId]) }); });
+
+app.get('/api/avatars', auth, function(req, res) { 
+  res.json({ avatars: dbAll("SELECT * FROM avatars WHERE user_id=? ORDER BY created_at DESC", [req.userId]) }); 
+});
+
+app.get('/api/user/:userId/avatars', auth, function(req, res) { 
+  res.json({ avatars: dbAll("SELECT id, avatar_path, is_active, created_at FROM avatars WHERE user_id=? ORDER BY created_at DESC", [req.params.userId]) }); 
+});
+
 app.post('/api/avatars/:id/activate', auth, function(req, res) {
   var avatar = dbGet("SELECT * FROM avatars WHERE id=? AND user_id=?", [req.params.id, req.userId]);
   if (!avatar) return res.status(404);
@@ -361,12 +483,15 @@ app.post('/api/avatars/:id/activate', auth, function(req, res) {
   dbRun('UPDATE users SET avatar=? WHERE id=?', [avatar.avatar_path, req.userId]);
   res.json({ avatar: avatar.avatar_path });
 });
+
 app.delete('/api/avatars/:id', auth, function(req, res) {
   var avatar = dbGet("SELECT * FROM avatars WHERE id=? AND user_id=?", [req.params.id, req.userId]);
   if (!avatar) return res.status(404);
   if (avatar.is_active) return res.status(400).json({ error: 'Нельзя удалить текущую' });
+  
   var fp = path.join(__dirname, 'public', avatar.avatar_path);
   if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  
   dbRun("DELETE FROM avatars WHERE id=?", [req.params.id]);
   res.json({ message: 'Удалена' });
 });
@@ -401,16 +526,32 @@ app.post('/api/admin/revoke-file-access/:userId', auth, adminAuth, function(req,
 });
 
 // ============ ФАЙЛЫ ============
-app.post('/api/upload', auth, upload.single('file'), function(req, res) {
-  if (!req.file) return res.status(400);
-  var user = dbGet('SELECT * FROM users WHERE id=?', [req.userId]);
-  if (!user || user.email !== 'ad6@gmail.com') {
-    var access = dbGet('SELECT * FROM file_access WHERE user_id=?', [req.userId]);
-    if (!access) return res.status(403).json({ error: 'Нет доступа к файлам. Обратитесь к администратору.' });
+app.post('/api/upload', auth, upload.single('file'), async function(req, res) {
+  try {
+    if (!req.file) return res.status(400);
+    
+    var user = dbGet('SELECT * FROM users WHERE id=?', [req.userId]);
+    if (!user || user.email !== 'ad6@gmail.com') {
+      var access = dbGet('SELECT * FROM file_access WHERE user_id=?', [req.userId]);
+      if (!access) return res.status(403).json({ error: 'Нет доступа к файлам. Обратитесь к администратору.' });
+    }
+    
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const fileUrl = await storage.uploadFileToS3(fileBuffer, req.file.originalname, req.file.mimetype, 'files');
+    
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    var id = uuid();
+    dbRun('INSERT INTO files (id, user_id, original_name, filename, file_type, file_size) VALUES (?, ?, ?, ?, ?, ?)', 
+      [id, req.userId, req.file.originalname, fileUrl, req.file.mimetype, req.file.size]);
+    
+    res.json({ ok: true, url: fileUrl });
+  } catch (error) {
+    console.error('❌ Ошибка загрузки файла:', error);
+    res.status(500).json({ error: 'Ошибка загрузки файла' });
   }
-  var id = uuid();
-  dbRun('INSERT INTO files (id, user_id, original_name, filename, file_type, file_size) VALUES (?, ?, ?, ?, ?, ?)', [id, req.userId, req.file.originalname, req.file.filename, req.file.mimetype, req.file.size]);
-  res.json({ ok: true });
 });
 
 app.get('/api/files', auth, function(req, res) {
@@ -433,65 +574,104 @@ app.post('/api/friends/request/:uid', auth, function(req, res) {
   if (existing) {
     if (existing.status === 'accepted') return res.status(400).json({ error: 'Уже друзья' });
     if (existing.status === 'pending' && existing.from_user === req.userId) return res.status(400).json({ error: 'Уже отправлена' });
-    if (existing.status === 'pending' && existing.from_user === toId) { dbRun("UPDATE friends SET status='accepted' WHERE id=?", [existing.id]); return res.json({ ok: true, auto: true }); }
+    if (existing.status === 'pending' && existing.from_user === toId) { 
+      dbRun("UPDATE friends SET status='accepted' WHERE id=?", [existing.id]); 
+      return res.json({ ok: true, auto: true }); 
+    }
   }
   dbRun('INSERT INTO friends (from_user, to_user, status) VALUES (?, ?, ?)', [req.userId, toId, 'pending']);
   res.json({ ok: true });
 });
+
 app.post('/api/friends/accept/:uid', auth, function(req, res) {
   var r = dbGet("SELECT * FROM friends WHERE from_user=? AND to_user=? AND status='pending'", [req.params.uid, req.userId]);
   if (!r) return res.status(404);
   dbRun("UPDATE friends SET status='accepted' WHERE id=?", [r.id]);
   res.json({ ok: true });
 });
+
 app.post('/api/friends/reject/:uid', auth, function(req, res) {
   dbRun("DELETE FROM friends WHERE from_user=? AND to_user=? AND status='pending'", [req.params.uid, req.userId]);
   res.json({ ok: true });
 });
+
 app.delete('/api/friends/:uid', auth, function(req, res) {
   dbRun("DELETE FROM friends WHERE (from_user=? AND to_user=?) OR (from_user=? AND to_user=?)", [req.userId, req.params.uid, req.params.uid, req.userId]);
   res.json({ ok: true });
 });
+
 app.get('/api/friends', auth, function(req, res) {
   var friends = dbAll("SELECT u.id, u.username, u.avatar FROM friends f JOIN users u ON u.id = CASE WHEN f.from_user=? THEN f.to_user ELSE f.from_user END WHERE (f.from_user=? OR f.to_user=?) AND f.status='accepted'", [req.userId, req.userId, req.userId]);
   var seen = {}, unique = [];
   friends.forEach(function(f) { if (!seen[f.id]) { seen[f.id] = true; unique.push(f); } });
   res.json({ friends: unique });
 });
+
 app.get('/api/friends/requests', auth, function(req, res) {
   res.json({ requests: dbAll("SELECT f.id, f.from_user, u.username, u.avatar FROM friends f JOIN users u ON f.from_user=u.id WHERE f.to_user=? AND f.status='pending'", [req.userId]) });
 });
 
-// ============ СООБЩЕНИЯ ============
-app.post('/api/messages/:fid', auth, upload.single('file'), function(req, res) {
-  var fid = parseInt(req.params.fid);
-  var friend = dbGet("SELECT * FROM friends WHERE ((from_user=? AND to_user=?) OR (from_user=? AND to_user=?)) AND status='accepted'", [req.userId, fid, fid, req.userId]);
-  if (!friend) return res.status(403).json({ error: 'Не друзья' });
-  
-  var text = req.body.message_text || '';
-  var fn = null, ft = null, fp = null;
-  if (req.file) { fn = req.file.originalname; ft = req.file.mimetype; fp = '/uploads/' + req.file.filename; }
-  var forwardFrom = req.body.forward_from || null;
-  var forwardFromName = req.body.forward_from_name || null;
-  if (forwardFrom && req.body.forward_file_path) {
-    fn = req.body.forward_file_name || 'file';
-    ft = req.body.forward_file_type || 'application/octet-stream';
-    fp = req.body.forward_file_path;
+// ============ СООБЩЕНИЯ С EVOLUTION OBJECT STORAGE ============
+app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, res) {
+  try {
+    var fid = parseInt(req.params.fid);
+    var friend = dbGet("SELECT * FROM friends WHERE ((from_user=? AND to_user=?) OR (from_user=? AND to_user=?)) AND status='accepted'", [req.userId, fid, fid, req.userId]);
+    if (!friend) return res.status(403).json({ error: 'Не друзья' });
+    
+    var text = req.body.message_text || '';
+    var filePath = null;
+    var fileName = null;
+    var fileType = null;
+    
+    if (req.file) {
+      fileName = req.file.originalname;
+      fileType = req.file.mimetype;
+      
+      // Читаем файл
+      const fileBuffer = fs.readFileSync(req.file.path);
+      
+      // Загружаем в Evolution Object Storage
+      filePath = await storage.uploadFileToS3(fileBuffer, fileName, fileType, 'uploads');
+      
+      // Удаляем временный файл
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      
+      console.log('📁 Файл загружен в Evolution:', filePath);
+    }
+    
+    var forwardFrom = req.body.forward_from || null;
+    var forwardFromName = req.body.forward_from_name || null;
+    
+    if (forwardFrom && req.body.forward_file_path) {
+      fileName = req.body.forward_file_name || 'file';
+      fileType = req.body.forward_file_type || 'application/octet-stream';
+      filePath = req.body.forward_file_path;
+    }
+    
+    var isSelfDestruct = req.body.is_self_destruct === 'true' || req.body.is_self_destruct === true ? 1 : 0;
+    
+    dbRun('INSERT INTO messages (sender_id, receiver_id, message_text, file_name, file_type, file_path, forward_from, forward_from_name, is_self_destruct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+      [req.userId, fid, text, fileName, fileType, filePath, forwardFrom, forwardFromName, isSelfDestruct]);
+    saveDB();
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('❌ Ошибка отправки сообщения:', error);
+    res.status(500).json({ error: 'Ошибка отправки сообщения' });
   }
-  var isSelfDestruct = req.body.is_self_destruct === 'true' || req.body.is_self_destruct === true ? 1 : 0;
-  dbRun('INSERT INTO messages (sender_id, receiver_id, message_text, file_name, file_type, file_path, forward_from, forward_from_name, is_self_destruct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-    [req.userId, fid, text, fn, ft, fp, forwardFrom, forwardFromName, isSelfDestruct]);
-  saveDB();
-  res.json({ ok: true });
 });
 
 app.post('/api/messages/:id/destruct', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404).json({ error: 'Не найдено' });
+  
   if (msg.is_self_destruct && msg.receiver_id === req.userId) {
-    if (msg.file_path) {
-      var fp = path.join(__dirname, 'public', msg.file_path);
-      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    if (msg.file_path && msg.file_path.startsWith('http')) {
+      // Удаляем файл из Evolution
+      storage.deleteFileFromS3(msg.file_path).catch(function(err) {
+        console.error('❌ Ошибка удаления файла из Evolution:', err);
+      });
     }
     dbRun("UPDATE messages SET deleted_for_receiver=1, file_path=NULL, file_name=NULL, file_type=NULL, message_text='[Одноразовое фото удалено]' WHERE id=?", [req.params.id]);
     saveDB();
@@ -504,6 +684,7 @@ app.post('/api/messages/:id/destruct', auth, function(req, res) {
 app.get('/api/messages/:fid', auth, function(req, res) {
   dbRun('UPDATE messages SET is_read=1 WHERE receiver_id=? AND sender_id=? AND deleted_for_receiver=0', [req.userId, req.params.fid]);
   var messages = dbAll('SELECT m.*, s.username, s.avatar FROM messages m JOIN users s ON m.sender_id=s.id WHERE ((m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?)) AND NOT (m.sender_id=? AND m.deleted_for_sender=1) AND NOT (m.receiver_id=? AND m.deleted_for_receiver=1) ORDER BY m.created_at ASC', [req.userId, req.params.fid, req.params.fid, req.userId, req.userId, req.userId]);
+  
   var msgIds = messages.map(function(m){return m.id});
   if (msgIds.length > 0) {
     var placeholders = msgIds.map(function(){return '?'}).join(',');
@@ -518,20 +699,24 @@ app.get('/api/messages/:fid', auth, function(req, res) {
       m.reactions = reactionMap[m.id] || {};
     });
   }
+  
   res.json({ messages: messages });
 });
 
 app.post('/api/messages/:id/delete', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404).json({ error: 'Сообщение не найдено' });
+  
   var deleteFor = req.body.delete_for || 'me';
+  
   if (deleteFor === 'all') {
     if (msg.sender_id !== req.userId) {
       return res.status(403).json({ error: 'Вы не можете удалить чужое сообщение у всех' });
     }
-    if (msg.file_path) {
-      var fp = path.join(__dirname, 'public', msg.file_path);
-      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    if (msg.file_path && msg.file_path.startsWith('http')) {
+      storage.deleteFileFromS3(msg.file_path).catch(function(err) {
+        console.error('❌ Ошибка удаления файла из Evolution:', err);
+      });
     }
     dbRun("UPDATE messages SET deleted_for_sender=1, deleted_for_receiver=1 WHERE id=?", [req.params.id]);
     dbRun("DELETE FROM shared_pins WHERE message_id=?", [req.params.id]);
@@ -540,6 +725,7 @@ app.post('/api/messages/:id/delete', auth, function(req, res) {
     saveDB();
     return res.json({ ok: true, message: 'Удалено у всех' });
   }
+  
   if (msg.sender_id === req.userId) {
     dbRun("UPDATE messages SET deleted_for_sender=1 WHERE id=?", [req.params.id]);
   } else {
@@ -553,9 +739,12 @@ app.post('/api/messages/:id/delete', auth, function(req, res) {
 app.post('/api/messages/:id/react', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404).json({ error: 'Сообщение не найдено' });
+  
   var reaction = req.body.reaction;
   if (!reaction) return res.status(400).json({ error: 'Реакция не указана' });
+  
   var userReactions = dbAll("SELECT * FROM reactions WHERE message_id=? AND user_id=?", [req.params.id, req.userId]);
+  
   var existing = null;
   for(var i=0; i<userReactions.length; i++){
     if(userReactions[i].reaction === reaction){
@@ -563,14 +752,17 @@ app.post('/api/messages/:id/react', auth, function(req, res) {
       break;
     }
   }
+  
   if (existing) {
     dbRun("DELETE FROM reactions WHERE id=?", [existing.id]);
     saveDB();
     return res.json({ ok: true, action: 'removed' });
   }
+  
   if (userReactions.length >= 2) {
     return res.status(400).json({ error: 'Можно поставить максимум 2 реакции' });
   }
+  
   dbRun("INSERT INTO reactions (message_id, user_id, reaction) VALUES (?, ?, ?)", [req.params.id, req.userId, reaction]);
   saveDB();
   res.json({ ok: true, action: 'added' });
@@ -589,6 +781,7 @@ app.post('/api/messages/:id/pin/shared', auth, function(req, res) {
   saveDB();
   res.json({ ok: true });
 });
+
 app.post('/api/messages/:id/pin/private', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404);
@@ -601,16 +794,19 @@ app.post('/api/messages/:id/pin/private', auth, function(req, res) {
   saveDB();
   res.json({ ok: true });
 });
+
 app.post('/api/messages/:id/unpin/shared', auth, function(req, res) {
   dbRun("DELETE FROM shared_pins WHERE message_id=? AND pinned_by=?", [req.params.id, req.userId]);
   saveDB();
   res.json({ ok: true });
 });
+
 app.post('/api/messages/:id/unpin/private', auth, function(req, res) {
   dbRun("DELETE FROM private_pins WHERE message_id=? AND pinned_by=?", [req.params.id, req.userId]);
   saveDB();
   res.json({ ok: true });
 });
+
 app.get('/api/pinned/shared/:fid', auth, function(req, res) {
   var fid = parseInt(req.params.fid);
   var u1 = Math.min(req.userId, fid);
@@ -618,6 +814,7 @@ app.get('/api/pinned/shared/:fid', auth, function(req, res) {
   var pinned = dbAll("SELECT sp.*, m.message_text, m.file_name, m.file_type, m.file_path, m.sender_id, m.created_at as msg_created, s.username, s.avatar FROM shared_pins sp JOIN messages m ON sp.message_id=m.id JOIN users s ON m.sender_id=s.id WHERE sp.chat_user1=? AND sp.chat_user2=? ORDER BY sp.created_at DESC", [u1, u2]);
   res.json({ pinned: pinned });
 });
+
 app.get('/api/pinned/private/:fid', auth, function(req, res) {
   var fid = parseInt(req.params.fid);
   var u1 = Math.min(req.userId, fid);
@@ -670,6 +867,11 @@ startDB().then(function() {
     console.log('🚀 Сервер запущен на http://localhost:' + PORT);
     console.log('📦 Система бэкапов активна (каждые 10 минут)');
     console.log('💾 Хранится последних 16 бэкапов');
+    if (storage.isConfigured) {
+      console.log('📁 Хранилище Evolution Object Storage подключено');
+    } else {
+      console.log('⚠️ Хранилище Evolution Object Storage НЕ настроено');
+    }
   });
 });
 
