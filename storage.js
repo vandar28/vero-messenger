@@ -17,7 +17,6 @@ const IS_CONFIGURED = !!(ACCESS_KEY_ID && SECRET_ACCESS_KEY);
 
 if (!IS_CONFIGURED) {
   console.warn('⚠️ Evolution Object Storage не настроен! Файлы будут сохраняться локально.');
-  console.warn('⚠️ Добавьте переменные EVOLUTION_ACCESS_KEY_ID и EVOLUTION_SECRET_ACCESS_KEY в .env');
 } else {
   console.log('✅ Evolution Object Storage настроен');
   console.log(`📦 Бакет: ${BUCKET}`);
@@ -27,12 +26,12 @@ if (!IS_CONFIGURED) {
 // ===== СОЗДАНИЕ КЛИЕНТА =====
 const s3Client = new S3Client({
   endpoint: ENDPOINT,
-  region: 'ru-central1',
+  region: 'ru-central-1', // ← ИСПРАВЛЕНО: было 'ru-central1'
   credentials: {
     accessKeyId: ACCESS_KEY_ID || '',
     secretAccessKey: SECRET_ACCESS_KEY || '',
   },
-  forcePathStyle: true, // Важно для Evolution Object Storage
+  forcePathStyle: true,
 });
 
 // ===== ЗАГРУЗКА ФАЙЛА В S3 =====
@@ -62,7 +61,7 @@ async function uploadFileToS3(fileBuffer, originalName, mimeType, folder = 'uplo
       ACL: 'public-read',
     });
     
-    const result = await s3Client.send(command);
+    await s3Client.send(command);
     console.log(`✅ Файл загружен в Evolution: ${key}`);
     
     // Возвращаем публичный URL
