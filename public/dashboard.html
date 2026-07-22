@@ -1523,18 +1523,32 @@ function lm(id,silent,callback){
             var con='',isSent=m.sender_id===U.id;
             if(!isSent)con+='<div class="msg-header"><div class="msg-avatar" onclick="event.stopPropagation();viewUserAvatars('+m.sender_id+',\''+m.username+'\')">'+av(m.avatar)+'</div><span class="msg-username">'+m.username+'</span></div>';
             if(m.forward_from){ con+='<div class="forward-badge">↪️ Переслано от '+m.forward_from_name+'</div>'; }
+            
             if(m.file_path){
                 if(m.file_type&&m.file_type.startsWith('image/')){
-                    if(m.is_self_destruct){ con+='<div class="self-destruct-wrapper"><img src="'+m.file_path+'" class="msg-img self-destruct-img" onclick="event.stopPropagation();ol(\''+m.file_path+'\',\''+m.file_type+'\',\''+m.id+'\',true)" loading="lazy"><div class="self-destruct-badge">🔥 Одноразовое</div></div>'; }
-                    else { con+='<img src="'+m.file_path+'" class="msg-img" onclick="event.stopPropagation();ol(\''+m.file_path+'\',\''+m.file_type+'\')" loading="lazy">'; }
-                }else if(m.file_type&&m.file_type.startsWith('video/')){ con+='<div class="msg-video-round-wrapper" onclick="event.stopPropagation();ol(\''+m.file_path+'\',\''+m.file_type+'\')"><video src="'+m.file_path+'" class="msg-video-round" preload="metadata" muted></video><div class="msg-video-play-badge">▶</div><div class="msg-video-duration-badge">Видео</div></div>'; }
-                else if(m.file_type&&m.file_type.startsWith('audio/')){
+                    // ===== ИСПРАВЛЕННАЯ ЧАСТЬ =====
+                    var imgSrc = m.file_path;
+                    if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('/')) {
+                        imgSrc = '/' + imgSrc;
+                    }
+                    if(m.is_self_destruct){
+                        con+='<div class="self-destruct-wrapper"><img src="'+imgSrc+'" class="msg-img self-destruct-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\',\''+m.id+'\',true)" loading="lazy" onerror="this.style.display=\'none\'; this.parentElement.innerHTML=\'<span style=\\"font-size:9px;color:var(--text-muted);\\">🔥 Файл удален</span>\'"><div class="self-destruct-badge">🔥 Одноразовое</div></div>';
+                    } else {
+                        con+='<img src="'+imgSrc+'" class="msg-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\')" loading="lazy" onerror="this.style.display=\'none\'; this.outerHTML=\'<span style=\\"font-size:9px;color:var(--text-muted);\\">❌ Файл недоступен</span>\'">';
+                    }
+                }else if(m.file_type&&m.file_type.startsWith('video/')){
+                    con+='<div class="msg-video-round-wrapper" onclick="event.stopPropagation();ol(\''+m.file_path+'\',\''+m.file_type+'\')"><video src="'+m.file_path+'" class="msg-video-round" preload="metadata" muted></video><div class="msg-video-play-badge">▶</div><div class="msg-video-duration-badge">Видео</div></div>';
+                }else if(m.file_type&&m.file_type.startsWith('audio/')){
                     con+='<div class="msg-audio-container"><button class="msg-audio-play" onclick="event.stopPropagation();playAudio(this,\''+m.file_path+'\')">▶</button><div class="msg-audio-wave" onclick="event.stopPropagation();playAudio(this.parentElement.querySelector(\'.msg-audio-play\'),\''+m.file_path+'\')"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div><span class="msg-audio-duration">0:00</span></div>';
-                }else{ con+='<div class="file-box" onclick="window.open(\''+m.file_path+'\')"><span style="font-size:20px">'+fiIcon(m.file_name||'')+'</span><div><div>'+m.file_name+'</div><div style="font-size:9px;opacity:0.6">Скачать</div></div></div>'; }
+                }else{
+                    con+='<div class="file-box" onclick="window.open(\''+m.file_path+'\')"><span style="font-size:20px">'+fiIcon(m.file_name||'')+'</span><div><div>'+m.file_name+'</div><div style="font-size:9px;opacity:0.6">Скачать</div></div></div>';
+                }
             }
             if(m.message_text)con+='<div>'+m.message_text+'</div>';
+            
             var statusIndicator='';
             if(isSent){ if(m.is_read){statusIndicator=' <span class="msg-status read-indicator">✓✓</span>'} else{statusIndicator=' <span class="msg-status sent-indicator">✓</span>'} }
+            
             var reacts='';
             if(m.reactions&&Object.keys(m.reactions).length>0){
                 reacts+='<div class="msg-reactions">';
@@ -1548,6 +1562,7 @@ function lm(id,silent,callback){
                 });
                 reacts+='</div>';
             }
+            
             h+='<div class="msg '+(isSent?'sent':'received')+'" data-msg-id="'+m.id+'">'+con+reacts+'<div class="time">'+new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+statusIndicator+'</div></div>';
         });
         if(!h)h='<div class="empty">Нет сообщений</div>';c.innerHTML=h;
@@ -1584,7 +1599,6 @@ function lm(id,silent,callback){
                 }
             }
             
-            // Индикатор печатает
             var typingEl = document.getElementById('typingIndicator');
             if (typingEl) {
                 if (status.is_typing && status.typing_to == U.id) {
