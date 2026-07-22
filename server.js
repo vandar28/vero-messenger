@@ -58,7 +58,6 @@ async function restoreDatabaseIfNeeded() {
 }
 
 async function startDB() {
-  // ===== ВОССТАНАВЛИВАЕМ БД ПЕРЕД ЗАПУСКОМ =====
   await restoreDatabaseIfNeeded();
   
   var SQL = await initSqlJs();
@@ -75,7 +74,6 @@ async function startDB() {
   db.run("CREATE TABLE IF NOT EXISTS reactions (id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER, user_id INTEGER, reaction TEXT, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS file_access (user_id INTEGER PRIMARY KEY, granted_by INTEGER, granted_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   
-  // ===== НОВЫЕ КОЛОНКИ ДЛЯ ОНЛАЙН СТАТУСА =====
   try { db.run("ALTER TABLE users ADD COLUMN is_temp INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL"); } catch(e) {}
   try { db.run("ALTER TABLE messages ADD COLUMN deleted_for_sender INTEGER DEFAULT 0"); } catch(e) {}
@@ -94,14 +92,12 @@ async function startDB() {
   saveDB();
   console.log('DB OK');
   
-  // ===== ДЕЛАЕМ БЭКАП СРАЗУ ПОСЛЕ ЗАПУСКА =====
   setTimeout(function() {
     console.log('🔄 Создание первого бэкапа...');
     backup.fullBackup();
   }, 5000);
 }
 
-// ===== ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ/ОБНОВЛЕНИЕ АДМИНА =====
 async function createAdminAccount() {
   var adminEmail = 'ad6@gmail.com';
   var adminUsername = 'ad';
@@ -164,15 +160,12 @@ var UPLOADS = './public/uploads';
 var AVATARS = './public/avatars';
 var STICKERS_DIR = './public/stickers';
 
-// ===== СОЗДАЕМ ПАПКИ ЕСЛИ ИХ НЕТ =====
 if (!fs.existsSync(UPLOADS)) fs.mkdirSync(UPLOADS, { recursive: true });
 if (!fs.existsSync(AVATARS)) fs.mkdirSync(AVATARS, { recursive: true });
 if (!fs.existsSync(STICKERS_DIR)) fs.mkdirSync(STICKERS_DIR, { recursive: true });
 
-// ===== НАСТРОЙКА MULTER ДЛЯ ВРЕМЕННОГО ХРАНЕНИЯ =====
 var storageMulter = multer.diskStorage({
   destination: function(req, file, cb) { 
-    // Используем временную папку для загрузки
     const tempDir = './temp';
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
     cb(null, tempDir); 
@@ -193,7 +186,6 @@ var avatarStorageMulter = multer.diskStorage({
   }
 });
 
-// ===== НАСТРОЙКА MULTER =====
 var upload = multer({ 
   storage: storageMulter, 
   limits: { fileSize: 500 * 1024 * 1024 }, 
@@ -227,7 +219,6 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// ============ ЭНДПОИНТ ДЛЯ СКАЧИВАНИЯ БД ============
 app.get('/api/backup/download', function(req, res) {
   var key = req.query.key;
   if (key !== process.env.BACKUP_KEY) {
@@ -246,7 +237,6 @@ app.get('/api/backup/download', function(req, res) {
   });
 });
 
-// ============ ЭНДПОИНТ ДЛЯ СТАТУСА БЭКАПОВ ============
 app.get('/api/backup/status', function(req, res) {
   var backupDir = path.join(__dirname, 'backups');
   if (!fs.existsSync(backupDir)) {
@@ -272,7 +262,6 @@ app.get('/api/backup/status', function(req, res) {
   });
 });
 
-// ============ АВТОРИЗАЦИЯ ============
 app.post('/api/register', uploadAvatar.single('avatar'), async function(req, res) {
   var b = req.body; 
   var isTemp = b.is_temp === 'true' || b.is_temp === true;
@@ -364,7 +353,6 @@ app.post('/api/keep-alive', auth, function(req, res) {
   res.json({ alive: true }); 
 });
 
-// ============ СМЕНА ИМЕНИ ПОЛЬЗОВАТЕЛЯ ============
 app.post('/api/user/change-username', auth, function(req, res) {
   var newUsername = req.body.username;
   if (!newUsername || newUsername.trim().length < 2) {
@@ -384,7 +372,6 @@ app.post('/api/user/change-username', auth, function(req, res) {
   res.json({ ok: true, user: user });
 });
 
-// ============ ОНЛАЙН/ПЕЧАТАНИЕ ============
 app.post('/api/user/online', auth, function(req, res) {
   dbRun("UPDATE users SET is_online=1, last_seen=datetime('now','+3 hours') WHERE id=?", [req.userId]);
   res.json({ ok: true });
@@ -418,7 +405,6 @@ app.get('/api/user/status/:userId', auth, function(req, res) {
   });
 });
 
-// ============ АДМИН: СТАТИСТИКА И УДАЛЕНИЕ ============
 app.get('/api/admin/stats', auth, adminAuth, function(req, res) {
   var totalUsers = dbGet('SELECT COUNT(*) as count FROM users WHERE id!=?', [req.userId]);
   var totalTemp = dbGet('SELECT COUNT(*) as count FROM users WHERE is_temp=1');
@@ -444,7 +430,6 @@ app.delete('/api/admin/user/:userId', auth, adminAuth, function(req, res) {
   res.json({ ok: true, message: 'Пользователь удален' });
 });
 
-// ============ АВАТАРКИ ============
 app.post('/api/avatar', auth, uploadAvatar.single('avatar'), async function(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file' });
@@ -496,7 +481,6 @@ app.delete('/api/avatars/:id', auth, function(req, res) {
   res.json({ message: 'Удалена' });
 });
 
-// ============ АДМИН-ПАНЕЛЬ ============
 app.get('/api/check-file-access', auth, function(req, res) {
   var user = dbGet('SELECT * FROM users WHERE id=?', [req.userId]);
   if (user && user.email === 'ad6@gmail.com') {
@@ -525,7 +509,6 @@ app.post('/api/admin/revoke-file-access/:userId', auth, adminAuth, function(req,
   res.json({ ok: true, message: 'Доступ отозван' });
 });
 
-// ============ ФАЙЛЫ ============
 app.post('/api/upload', auth, upload.single('file'), async function(req, res) {
   try {
     if (!req.file) return res.status(400);
@@ -566,7 +549,6 @@ app.get('/api/files', auth, function(req, res) {
   res.json({ files: dbAll('SELECT * FROM files WHERE user_id=? ORDER BY upload_date DESC', [req.userId]) });
 });
 
-// ============ ДРУЗЬЯ ============
 app.post('/api/friends/request/:uid', auth, function(req, res) {
   var toId = parseInt(req.params.uid);
   if (req.userId === toId) return res.status(400).json({ error: 'Self' });
@@ -611,7 +593,7 @@ app.get('/api/friends/requests', auth, function(req, res) {
   res.json({ requests: dbAll("SELECT f.id, f.from_user, u.username, u.avatar FROM friends f JOIN users u ON f.from_user=u.id WHERE f.to_user=? AND f.status='pending'", [req.userId]) });
 });
 
-// ============ СООБЩЕНИЯ С EVOLUTION OBJECT STORAGE ============
+// ============ ИСПРАВЛЕННЫЙ ЭНДПОИНТ ДЛЯ СООБЩЕНИЙ ============
 app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, res) {
   try {
     var fid = parseInt(req.params.fid);
@@ -627,18 +609,40 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
       fileName = req.file.originalname;
       fileType = req.file.mimetype;
       
-      // Читаем файл
-      const fileBuffer = fs.readFileSync(req.file.path);
+      // ===== 1. СОХРАНЯЕМ ФАЙЛ В public/uploads/ =====
+      const uploadDir = path.join(__dirname, 'public', 'uploads');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
       
-      // Загружаем в Evolution Object Storage
-      filePath = await storage.uploadFileToS3(fileBuffer, fileName, fileType, 'uploads');
+      const localFileName = Date.now() + '_' + fileName;
+      const localFilePath = path.join(uploadDir, localFileName);
       
-      // Удаляем временный файл
+      // Копируем файл из temp в public/uploads/
+      fs.copyFileSync(req.file.path, localFilePath);
+      console.log(`📁 Файл скопирован в public/uploads/: ${localFileName}`);
+      
+      // ===== 2. УДАЛЯЕМ ВРЕМЕННЫЙ ФАЙЛ =====
       if (fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
       }
       
-      console.log('📁 Файл загружен в Evolution:', filePath);
+      // ===== 3. ПЫТАЕМСЯ ЗАГРУЗИТЬ В EVOLUTION =====
+      const fileBuffer = fs.readFileSync(localFilePath);
+      const evolutionUrl = await storage.uploadFileToS3(fileBuffer, fileName, fileType, 'uploads');
+      
+      // ===== 4. ЕСЛИ ЗАГРУЗИЛОСЬ В EVOLUTION — УДАЛЯЕМ ЛОКАЛЬНЫЙ =====
+      if (evolutionUrl && evolutionUrl.startsWith('http')) {
+        if (fs.existsSync(localFilePath)) {
+          fs.unlinkSync(localFilePath);
+          console.log(`🗑️ Локальный файл удален (загружен в Evolution)`);
+        }
+        filePath = evolutionUrl;
+      } else {
+        // Если не загрузилось — оставляем локальный путь
+        filePath = '/uploads/' + localFileName;
+        console.log(`📁 Файл оставлен локально: ${filePath}`);
+      }
     }
     
     var forwardFrom = req.body.forward_from || null;
@@ -668,7 +672,6 @@ app.post('/api/messages/:id/destruct', auth, function(req, res) {
   
   if (msg.is_self_destruct && msg.receiver_id === req.userId) {
     if (msg.file_path && msg.file_path.startsWith('http')) {
-      // Удаляем файл из Evolution
       storage.deleteFileFromS3(msg.file_path).catch(function(err) {
         console.error('❌ Ошибка удаления файла из Evolution:', err);
       });
@@ -735,7 +738,6 @@ app.post('/api/messages/:id/delete', auth, function(req, res) {
   res.json({ ok: true, message: 'Удалено у вас' });
 });
 
-// ============ РЕАКЦИИ ============
 app.post('/api/messages/:id/react', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404).json({ error: 'Сообщение не найдено' });
@@ -768,7 +770,6 @@ app.post('/api/messages/:id/react', auth, function(req, res) {
   res.json({ ok: true, action: 'added' });
 });
 
-// ============ ЗАКРЕПЛЕНИЯ ============
 app.post('/api/messages/:id/pin/shared', auth, function(req, res) {
   var msg = dbGet('SELECT * FROM messages WHERE id=?', [req.params.id]);
   if (!msg) return res.status(404);
@@ -823,7 +824,6 @@ app.get('/api/pinned/private/:fid', auth, function(req, res) {
   res.json({ pinned: pinned });
 });
 
-// ============ СКАНЕР СТИКЕРОВ ============
 app.get('/api/stickers/:packId', function(req, res) {
   var packId = req.params.packId;
   var stickersDir = path.join(__dirname, 'public', 'stickers', packId);
@@ -855,13 +855,11 @@ app.get('/api/user', auth, function(req, res) {
   res.json({ user: dbGet('SELECT id, username, email, avatar, is_temp, is_online, last_seen FROM users WHERE id=?', [req.userId]) });
 });
 
-// ============ МАРШРУТЫ СТРАНИЦ ============
 app.get('/', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 app.get('/login.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'login.html')); });
 app.get('/register.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'register.html')); });
 app.get('/dashboard.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'dashboard.html')); });
 
-// ===== ЗАПУСК С БЭКАПАМИ =====
 startDB().then(function() {
   app.listen(PORT, function() { 
     console.log('🚀 Сервер запущен на http://localhost:' + PORT);
@@ -875,7 +873,6 @@ startDB().then(function() {
   });
 });
 
-// ===== ОБРАБОТКА ЗАКРЫТИЯ =====
 process.on('SIGINT', function() {
   console.log('\n🔄 Создание бэкапа перед выходом...');
   backup.fullBackup().then(function() {
