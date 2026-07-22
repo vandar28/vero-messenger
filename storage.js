@@ -4,24 +4,26 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-// ===== КОНФИГУРАЦИЯ ИЗ .env =====
+// ===== КОНФИГУРАЦИЯ =====
 const ACCESS_KEY_ID = process.env.EVOLUTION_ACCESS_KEY_ID;
 const SECRET_ACCESS_KEY = process.env.EVOLUTION_SECRET_ACCESS_KEY;
 const ENDPOINT = process.env.EVOLUTION_ENDPOINT || 'https://s3.cloud.ru';
 const BUCKET = process.env.EVOLUTION_BUCKET || 'vero-media';
-const PUBLIC_URL = process.env.EVOLUTION_PUBLIC_URL || `${ENDPOINT}/${BUCKET}`;
+
+// ===== ПРИНУДИТЕЛЬНЫЙ PUBLIC_URL =====
+const PUBLIC_URL = 'https://vero-media.s3.cloud.ru';
 
 const IS_CONFIGURED = !!(ACCESS_KEY_ID && SECRET_ACCESS_KEY);
 
 if (!IS_CONFIGURED) {
-  console.warn('⚠️ Evolution Object Storage не настроен! Файлы будут сохраняться локально.');
+  console.warn('⚠️ Evolution Object Storage не настроен!');
 } else {
   console.log('✅ Evolution Object Storage настроен');
   console.log(`📦 Бакет: ${BUCKET}`);
-  console.log(`🔗 Эндпоинт: ${ENDPOINT}`);
+  console.log(`🔗 Public URL: ${PUBLIC_URL}`);
 }
 
-// ===== ПРАВИЛЬНЫЙ КЛИЕНТ =====
+// ===== КЛИЕНТ =====
 const s3Client = new S3Client({
   endpoint: ENDPOINT,
   region: 'ru-central-1',
@@ -33,7 +35,7 @@ const s3Client = new S3Client({
 });
 
 async function uploadFileToS3(fileBuffer, originalName, mimeType, folder = 'uploads') {
-  // Всегда сохраняем локально в public/ для надежности
+  // Сохраняем локально
   const publicPath = path.join(__dirname, 'public', folder, originalName);
   const publicDir = path.dirname(publicPath);
   if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
@@ -57,13 +59,17 @@ async function uploadFileToS3(fileBuffer, originalName, mimeType, folder = 'uplo
       await s3Client.send(command);
       console.log(`✅ Файл загружен в Evolution: ${key}`);
       
-      // Удаляем локальный файл, если загрузился в Evolution
+      // Удаляем локальный файл
       if (fs.existsSync(publicPath)) {
         fs.unlinkSync(publicPath);
-        console.log(`🗑️ Локальный файл удален (загружен в Evolution): ${publicPath}`);
+        console.log(`🗑️ Локальный файл удален (загружен в Evolution)`);
       }
       
-      return `${PUBLIC_URL}/${key}`;
+      // ===== ВОЗВРАЩАЕМ ПОЛНЫЙ URL =====
+      const fullUrl = `https://vero-media.s3.cloud.ru/${key}`;
+      console.log(`📎 URL файла: ${fullUrl}`);
+      return fullUrl;
+      
     } catch (error) {
       console.error('❌ Ошибка загрузки в Evolution:', error);
       console.log(`📁 Файл оставлен локально: ${publicPath}`);
@@ -75,7 +81,6 @@ async function uploadFileToS3(fileBuffer, originalName, mimeType, folder = 'uplo
 }
 
 async function deleteFileFromS3(fileUrl) {
-  // Если файл локальный — удаляем
   if (fileUrl && !fileUrl.startsWith('http')) {
     const localPath = path.join(__dirname, 'public', fileUrl);
     if (fs.existsSync(localPath)) {
@@ -90,10 +95,15 @@ async function deleteFileFromS3(fileUrl) {
   try {
     let key = fileUrl;
     if (fileUrl.startsWith('http')) {
-      key = fileUrl.split(`${BUCKET}/`)[1];
-      if (!key) {
-        const urlParts = fileUrl.split('/');
-        key = urlParts.slice(urlParts.indexOf(BUCKET) + 1).join('/');
+      // Извлекаем ключ из URL
+      const parts = fileUrl.split('/');
+      const bucketIndex = parts.indexOf(BUCKET);
+      if (bucketIndex !== -1) {
+        key = parts.slice(bucketIndex + 1).join('/');
+      } else {
+        // Если бакет не найден, пробуем другой способ
+        const url = new URL(fileUrl);
+        key = url.pathname.substring(1);
       }
     }
     if (!key) return;
