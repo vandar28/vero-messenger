@@ -1497,21 +1497,31 @@ function navigateToMessage(msgId){
 
 function attachMsgEvents(el,msg){
     var msgId=msg.id,isSent=msg.sender_id===U.id;
+    // ===== КЛИК ПО СООБЩЕНИЮ = РЕАКЦИИ =====
     el.addEventListener('click', function(e) {
         e.stopPropagation();
+        // Если выделено сообщение — не открываем реакции
         if (el.classList.contains('selected')) return;
         toggleReactionPicker(el, msgId);
     });
+    // ===== ДВОЙНОЙ КЛИК = ВЫДЕЛЕНИЕ =====
     el.addEventListener('dblclick', function(e) {
         e.stopPropagation();
         toggleMessage(el, msgId, isSent);
     });
+    // ===== ДОЛГОЕ НАЖАТИЕ (телефон) =====
     el.addEventListener('touchstart', function(e) {
-        longPressTimer = setTimeout(function() { toggleMessage(el, msgId, isSent); }, 500);
+        longPressTimer = setTimeout(function() {
+            toggleMessage(el, msgId, isSent);
+        }, 500);
     });
     el.addEventListener('touchend', function() { clearTimeout(longPressTimer); });
     el.addEventListener('touchmove', function() { clearTimeout(longPressTimer); });
-    el.addEventListener('contextmenu', function(e) { e.preventDefault(); toggleMessage(el, msgId, isSent); });
+    // ===== ПРАВЫЙ КЛИК (ПК) =====
+    el.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        toggleMessage(el, msgId, isSent);
+    });
 }
 
 function lm(id,silent,callback){
@@ -1526,7 +1536,7 @@ function lm(id,silent,callback){
             
             if(m.file_path){
                 if(m.file_type&&m.file_type.startsWith('image/')){
-                    // ===== ИСПРАВЛЕННАЯ ЧАСТЬ =====
+                    // ===== ИСПРАВЛЕНО ДЛЯ CLOUDINARY =====
                     var imgSrc = m.file_path;
                     if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('/')) {
                         imgSrc = '/' + imgSrc;

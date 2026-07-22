@@ -11,8 +11,8 @@ var initSqlJs = require('sql.js');
 // ===== ПОДКЛЮЧАЕМ СИСТЕМУ БЭКАПОВ =====
 var backup = require('./backup');
 
-// ===== ПОДКЛЮЧАЕМ ХРАНИЛИЩЕ EVOLUTION OBJECT STORAGE =====
-const storage = require('./storage');
+// ===== ПОДКЛЮЧАЕМ ХРАНИЛИЩЕ CLOUDINARY =====
+const storage = require('./storage-cloudinary');
 
 var app = express();
 var PORT = process.env.PORT || 3000;
@@ -280,7 +280,7 @@ app.post('/api/register', uploadAvatar.single('avatar'), async function(req, res
   
   if (req.file) {
     const fileBuffer = fs.readFileSync(req.file.path);
-    avatarPath = await storage.uploadFileToS3(fileBuffer, req.file.filename, req.file.mimetype, 'avatars');
+    avatarPath = await storage.uploadFile(fileBuffer, req.file.filename, req.file.mimetype, 'avatars');
     if (fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
@@ -430,12 +430,13 @@ app.delete('/api/admin/user/:userId', auth, adminAuth, function(req, res) {
   res.json({ ok: true, message: 'Пользователь удален' });
 });
 
+// ============ АВАТАРКИ С CLOUDINARY ============
 app.post('/api/avatar', auth, uploadAvatar.single('avatar'), async function(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file' });
     
     const fileBuffer = fs.readFileSync(req.file.path);
-    const avatarPath = await storage.uploadFileToS3(fileBuffer, req.file.filename, req.file.mimetype, 'avatars');
+    const avatarPath = await storage.uploadFile(fileBuffer, req.file.filename, req.file.mimetype, 'avatars');
     
     if (fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
@@ -474,8 +475,16 @@ app.delete('/api/avatars/:id', auth, function(req, res) {
   if (!avatar) return res.status(404);
   if (avatar.is_active) return res.status(400).json({ error: 'Нельзя удалить текущую' });
   
-  var fp = path.join(__dirname, 'public', avatar.avatar_path);
-  if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  // Если путь начинается с http — удаляем из Cloudinary
+  if (avatar.avatar_path && avatar.avatar_path.startsWith('http')) {
+    storage.deleteFile(avatar.avatar_path).catch(function(err) {
+      console.error('❌ Ошибка удаления из Cloudinary:', err);
+    });
+  } else {
+    // Иначе удаляем локально
+    var fp = path.join(__dirname, 'public', avatar.avatar_path);
+    if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  }
   
   dbRun("DELETE FROM avatars WHERE id=?", [req.params.id]);
   res.json({ message: 'Удалена' });
@@ -520,7 +529,7 @@ app.post('/api/upload', auth, upload.single('file'), async function(req, res) {
     }
     
     const fileBuffer = fs.readFileSync(req.file.path);
-    const fileUrl = await storage.uploadFileToS3(fileBuffer, req.file.originalname, req.file.mimetype, 'files');
+    const fileUrl = await storage.uploadFile(fileBuffer, req.file.originalname, req.file.mimetype, 'files');
     
     if (fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
@@ -593,7 +602,7 @@ app.get('/api/friends/requests', auth, function(req, res) {
   res.json({ requests: dbAll("SELECT f.id, f.from_user, u.username, u.avatar FROM friends f JOIN users u ON f.from_user=u.id WHERE f.to_user=? AND f.status='pending'", [req.userId]) });
 });
 
-// ============ ИСПРАВЛЕННЫЙ ЭНДПОИНТ ДЛЯ СООБЩЕНИЙ ============
+// ============ СООБЩЕНИЯ С CLOUDINARY ============
 app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, res) {
   try {
     var fid = parseInt(req.params.fid);
@@ -618,7 +627,6 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
       const localFileName = Date.now() + '_' + fileName;
       const localFilePath = path.join(uploadDir, localFileName);
       
-      // Копируем файл из temp в public/uploads/
       fs.copyFileSync(req.file.path, localFilePath);
       console.log(`📁 Файл скопирован в public/uploads/: ${localFileName}`);
       
@@ -627,19 +635,18 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
         fs.unlinkSync(req.file.path);
       }
       
-      // ===== 3. ПЫТАЕМСЯ ЗАГРУЗИТЬ В EVOLUTION =====
+      // ===== 3. ЗАГРУЖАЕМ В CLOUDINARY =====
       const fileBuffer = fs.readFileSync(localFilePath);
-      const evolutionUrl = await storage.uploadFileToS3(fileBuffer, fileName, fileType, 'uploads');
+      const cloudinaryUrl = await storage.uploadFile(fileBuffer, fileName, fileType, 'uploads');
       
-      // ===== 4. ЕСЛИ ЗАГРУЗИЛОСЬ В EVOLUTION — УДАЛЯЕМ ЛОКАЛЬНЫЙ =====
-      if (evolutionUrl && evolutionUrl.startsWith('http')) {
+      // ===== 4. ЕСЛИ ЗАГРУЗИЛОСЬ В CLOUDINARY — УДАЛЯЕМ ЛОКАЛЬНЫЙ =====
+      if (cloudinaryUrl && cloudinaryUrl.startsWith('http')) {
         if (fs.existsSync(localFilePath)) {
           fs.unlinkSync(localFilePath);
-          console.log(`🗑️ Локальный файл удален (загружен в Evolution)`);
+          console.log(`🗑️ Локальный файл удален (загружен в Cloudinary)`);
         }
-        filePath = evolutionUrl;
+        filePath = cloudinaryUrl;
       } else {
-        // Если не загрузилось — оставляем локальный путь
         filePath = '/uploads/' + localFileName;
         console.log(`📁 Файл оставлен локально: ${filePath}`);
       }
@@ -672,8 +679,8 @@ app.post('/api/messages/:id/destruct', auth, function(req, res) {
   
   if (msg.is_self_destruct && msg.receiver_id === req.userId) {
     if (msg.file_path && msg.file_path.startsWith('http')) {
-      storage.deleteFileFromS3(msg.file_path).catch(function(err) {
-        console.error('❌ Ошибка удаления файла из Evolution:', err);
+      storage.deleteFile(msg.file_path).catch(function(err) {
+        console.error('❌ Ошибка удаления файла из Cloudinary:', err);
       });
     }
     dbRun("UPDATE messages SET deleted_for_receiver=1, file_path=NULL, file_name=NULL, file_type=NULL, message_text='[Одноразовое фото удалено]' WHERE id=?", [req.params.id]);
@@ -717,8 +724,8 @@ app.post('/api/messages/:id/delete', auth, function(req, res) {
       return res.status(403).json({ error: 'Вы не можете удалить чужое сообщение у всех' });
     }
     if (msg.file_path && msg.file_path.startsWith('http')) {
-      storage.deleteFileFromS3(msg.file_path).catch(function(err) {
-        console.error('❌ Ошибка удаления файла из Evolution:', err);
+      storage.deleteFile(msg.file_path).catch(function(err) {
+        console.error('❌ Ошибка удаления файла из Cloudinary:', err);
       });
     }
     dbRun("UPDATE messages SET deleted_for_sender=1, deleted_for_receiver=1 WHERE id=?", [req.params.id]);
@@ -866,9 +873,9 @@ startDB().then(function() {
     console.log('📦 Система бэкапов активна (каждые 10 минут)');
     console.log('💾 Хранится последних 16 бэкапов');
     if (storage.isConfigured) {
-      console.log('📁 Хранилище Evolution Object Storage подключено');
+      console.log('📁 Хранилище Cloudinary подключено');
     } else {
-      console.log('⚠️ Хранилище Evolution Object Storage НЕ настроено');
+      console.log('⚠️ Хранилище Cloudinary НЕ настроено');
     }
   });
 });
