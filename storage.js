@@ -24,7 +24,7 @@ if (!IS_CONFIGURED) {
 // ===== ПРАВИЛЬНЫЙ КЛИЕНТ =====
 const s3Client = new S3Client({
   endpoint: ENDPOINT,
-  region: 'ru-central-1', // ← ЭТО ГЛАВНОЕ ИСПРАВЛЕНИЕ!
+  region: 'ru-central-1',
   credentials: {
     accessKeyId: ACCESS_KEY_ID || '',
     secretAccessKey: SECRET_ACCESS_KEY || '',
@@ -33,47 +33,60 @@ const s3Client = new S3Client({
 });
 
 async function uploadFileToS3(fileBuffer, originalName, mimeType, folder = 'uploads') {
-  if (!IS_CONFIGURED) {
-    const localPath = path.join(__dirname, 'public', folder, originalName);
-    const localDir = path.dirname(localPath);
-    if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
-    fs.writeFileSync(localPath, fileBuffer);
-    console.log(`📁 Файл сохранен локально: ${localPath}`);
-    return `/${folder}/${originalName}`;
-  }
+  // Всегда сохраняем локально в public/ для надежности
+  const publicPath = path.join(__dirname, 'public', folder, originalName);
+  const publicDir = path.dirname(publicPath);
+  if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+  fs.writeFileSync(publicPath, fileBuffer);
+  console.log(`📁 Файл сохранен локально: ${publicPath}`);
 
-  const fileId = crypto.randomUUID() + '_' + originalName;
-  const key = `${folder}/${fileId}`;
-  
-  try {
-    const command = new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: key,
-      Body: fileBuffer,
-      ContentType: mimeType || 'application/octet-stream',
-      ACL: 'public-read',
-    });
+  // Пытаемся загрузить в Evolution
+  if (IS_CONFIGURED) {
+    const fileId = crypto.randomUUID() + '_' + originalName;
+    const key = `${folder}/${fileId}`;
     
-    await s3Client.send(command);
-    console.log(`✅ Файл загружен в Evolution: ${key}`);
-    return `${PUBLIC_URL}/${key}`;
-  } catch (error) {
-    console.error('❌ Ошибка загрузки в Evolution:', error);
-    const localPath = path.join(__dirname, 'public', folder, originalName);
-    const localDir = path.dirname(localPath);
-    if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
-    fs.writeFileSync(localPath, fileBuffer);
-    console.log(`📁 Файл сохранен локально (ошибка S3): ${localPath}`);
-    return `/${folder}/${originalName}`;
+    try {
+      const command = new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        Body: fileBuffer,
+        ContentType: mimeType || 'application/octet-stream',
+        ACL: 'public-read',
+      });
+      
+      await s3Client.send(command);
+      console.log(`✅ Файл загружен в Evolution: ${key}`);
+      
+      // Удаляем локальный файл, если загрузился в Evolution
+      if (fs.existsSync(publicPath)) {
+        fs.unlinkSync(publicPath);
+        console.log(`🗑️ Локальный файл удален (загружен в Evolution): ${publicPath}`);
+      }
+      
+      return `${PUBLIC_URL}/${key}`;
+    } catch (error) {
+      console.error('❌ Ошибка загрузки в Evolution:', error);
+      console.log(`📁 Файл оставлен локально: ${publicPath}`);
+      return `/${folder}/${originalName}`;
+    }
   }
+  
+  return `/${folder}/${originalName}`;
 }
 
 async function deleteFileFromS3(fileUrl) {
-  if (!IS_CONFIGURED) {
+  // Если файл локальный — удаляем
+  if (fileUrl && !fileUrl.startsWith('http')) {
     const localPath = path.join(__dirname, 'public', fileUrl);
-    if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+    if (fs.existsSync(localPath)) {
+      fs.unlinkSync(localPath);
+      console.log(`🗑️ Локальный файл удален: ${localPath}`);
+    }
     return;
   }
+  
+  if (!IS_CONFIGURED) return;
+  
   try {
     let key = fileUrl;
     if (fileUrl.startsWith('http')) {
@@ -84,6 +97,7 @@ async function deleteFileFromS3(fileUrl) {
       }
     }
     if (!key) return;
+    
     const command = new DeleteObjectCommand({ Bucket: BUCKET, Key: key });
     await s3Client.send(command);
     console.log(`🗑️ Файл удален из Evolution: ${key}`);
