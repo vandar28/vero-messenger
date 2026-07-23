@@ -39,26 +39,30 @@ if (fs.existsSync(DB_PATH)) {
   }
 }
 
-// ===== ФУНКЦИЯ ДЛЯ ВОССТАНОВЛЕНИЯ БЭКАПА =====
+// ===== ФУНКЦИЯ ДЛЯ ВОССТАНОВЛЕНИЯ БЭКАПА (ОТКЛЮЧЕНА) =====
 async function restoreDatabaseIfNeeded() {
   console.log('🔄 Проверка бэкапов...');
-  try {
-    var restored = await backup.restoreFromGitHub();
-    if (restored) {
-      console.log('✅ База данных восстановлена из GitHub');
-      return true;
-    } else {
-      console.log('ℹ️ Используем локальную базу данных');
-      return false;
-    }
-  } catch (error) {
-    console.error('❌ Ошибка восстановления:', error);
-    return false;
-  }
+  // ===== ВРЕМЕННО ОТКЛЮЧАЕМ ВОССТАНОВЛЕНИЕ ДЛЯ СТАБИЛЬНОСТИ =====
+  // try {
+  //   var restored = await backup.restoreFromGitHub();
+  //   if (restored) {
+  //     console.log('✅ База данных восстановлена из GitHub');
+  //     return true;
+  //   } else {
+  //     console.log('ℹ️ Используем локальную базу данных');
+  //     return false;
+  //   }
+  // } catch (error) {
+  //   console.error('❌ Ошибка восстановления:', error);
+  //   return false;
+  // }
+  console.log('ℹ️ Восстановление из бэкапа ОТКЛЮЧЕНО для стабильности');
+  return false;
 }
 
 async function startDB() {
-  await restoreDatabaseIfNeeded();
+  // ===== ВРЕМЕННО ОТКЛЮЧАЕМ ВОССТАНОВЛЕНИЕ =====
+  // await restoreDatabaseIfNeeded();
   
   var SQL = await initSqlJs();
   if (fs.existsSync(DB_PATH)) db = new SQL.Database(fs.readFileSync(DB_PATH));
@@ -87,7 +91,9 @@ async function startDB() {
   try { db.run("ALTER TABLE users ADD COLUMN is_typing INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN typing_to INTEGER DEFAULT NULL"); } catch(e) {}
   
-  cleanAllTempAccounts();
+  // ===== НЕ УДАЛЯЕМ ВРЕМЕННЫЕ АККАУНТЫ АВТОМАТИЧЕСКИ =====
+  // cleanAllTempAccounts();  // ← ВРЕМЕННО ОТКЛЮЧЕНО
+  
   await createAdminAccount();
   saveDB();
   console.log('DB OK');
@@ -146,12 +152,29 @@ function deleteUserData(userId) {
   dbRun("DELETE FROM users WHERE id=?", [userId]);
 }
 
-function saveDB() { fs.writeFileSync(DB_PATH, Buffer.from(db.export())); }
-function dbRun(sql, p) { try { db.run(sql, p || []); saveDB(); } catch(e) { console.error(e); } }
+function saveDB() { 
+  try {
+    fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+    console.log('💾 БД сохранена');
+  } catch(e) {
+    console.error('❌ Ошибка сохранения БД:', e);
+  }
+}
+
+function dbRun(sql, p) { 
+  try { 
+    db.run(sql, p || []); 
+    saveDB(); 
+  } catch(e) { 
+    console.error('❌ Ошибка выполнения SQL:', e); 
+  } 
+}
+
 function dbGet(sql, p) {
   try { var s = db.prepare(sql); s.bind(p || []); if (s.step()) { var r = s.getAsObject(); s.free(); return r; } s.free(); } catch(e) {}
   return null;
 }
+
 function dbAll(sql, p) {
   try { var s = db.prepare(sql); s.bind(p || []); var r = []; while (s.step()) r.push(s.getAsObject()); s.free(); return r; } catch(e) { return []; }
 }
@@ -867,7 +890,7 @@ startDB().then(function() {
   app.listen(PORT, function() { 
     console.log('🚀 Сервер запущен на http://localhost:' + PORT);
     console.log('📦 Система бэкапов активна (каждые 7 минут)');
-    console.log('💾 Хранится последних 16 бэкапов');
+    console.log('💾 Хранится последних 7 бэкапов');
     if (storage.isConfigured) {
       console.log('📁 Хранилище Cloudinary подключено');
     } else {
