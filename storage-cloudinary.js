@@ -22,7 +22,9 @@ if (IS_CONFIGURED) {
   console.warn('⚠️ Cloudinary НЕ настроен! Файлы будут сохраняться локально.');
 }
 
+// ===== ОСНОВНАЯ ФУНКЦИЯ ЗАГРУЗКИ =====
 async function uploadFile(fileBuffer, originalName, mimeType, folder = 'uploads') {
+  // Локальное сохранение (всегда)
   const publicPath = path.join(__dirname, 'public', folder, originalName);
   const publicDir = path.dirname(publicPath);
   if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
@@ -34,27 +36,91 @@ async function uploadFile(fileBuffer, originalName, mimeType, folder = 'uploads'
   }
 
   try {
-    const resourceType = mimeType && mimeType.startsWith('video/') ? 'video' : 'image';
+    // ОПРЕДЕЛЯЕМ ТИП РЕСУРСА
+    let resourceType = 'auto';
+    let isVideo = false;
+    let isAudio = false;
     
+    if (mimeType) {
+      if (mimeType.startsWith('video/')) {
+        resourceType = 'video';
+        isVideo = true;
+      } else if (mimeType.startsWith('image/')) {
+        resourceType = 'image';
+      } else if (mimeType.startsWith('audio/')) {
+        resourceType = 'video';
+        isAudio = true;
+      }
+    }
+    
+    // Проверяем расширение
+    const ext = path.extname(originalName).toLowerCase();
+    const videoExts = ['.webm', '.mp4', '.mov', '.avi', '.mkv', '.ogv', '.3gp', '.m4v', '.flv'];
+    const audioExts = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'];
+    
+    if (videoExts.includes(ext)) {
+      resourceType = 'video';
+      isVideo = true;
+    } else if (audioExts.includes(ext)) {
+      resourceType = 'video';
+      isAudio = true;
+    }
+    
+    console.log(`📹 Тип ресурса: ${resourceType} (${mimeType || 'unknown'})`);
+
+    // Строим трансформации
     let transformation = [];
+    let eager = [];
+    
     if (folder === 'avatars') {
       transformation = [
         { width: 200, height: 200, crop: 'fill', gravity: 'face' }
       ];
+    } else if (isVideo) {
+      // ДЛЯ ВИДЕО - ОПТИМИЗАЦИЯ ДЛЯ КРУЖКОВ
+      transformation = [
+        { width: 480, height: 480, crop: 'limit' },
+        { quality: 'auto:good' }
+      ];
+      eager = [
+        { 
+          format: 'jpg', 
+          width: 480, 
+          height: 480, 
+          crop: 'thumb',
+          quality: 'auto'
+        }
+      ];
+    } else if (isAudio) {
+      transformation = [
+        { quality: 'auto' }
+      ];
     }
 
+    // Генерируем уникальное имя
+    const nameWithoutExt = path.parse(originalName).name;
+    const uniqueId = crypto.randomUUID() + '_' + nameWithoutExt;
+
+    // ЗАГРУЗКА
     const result = await new Promise((resolve, reject) => {
+      const uploadOptions = {
+        folder: folder,
+        resource_type: resourceType,
+        use_filename: true,
+        unique_filename: true,
+        public_id: uniqueId,
+        transformation: transformation,
+        quality: 'auto',
+        fetch_format: 'auto',
+      };
+      
+      if (isVideo && eager.length > 0) {
+        uploadOptions.eager = eager;
+        uploadOptions.eager_async = true;
+      }
+      
       const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: folder,
-          resource_type: resourceType,
-          use_filename: true,
-          unique_filename: true,
-          public_id: crypto.randomUUID() + '_' + path.parse(originalName).name,
-          transformation: transformation,
-          quality: 'auto',
-          fetch_format: 'auto',
-        },
+        uploadOptions,
         (error, result) => {
           if (error) reject(error);
           else resolve(result);
@@ -65,7 +131,11 @@ async function uploadFile(fileBuffer, originalName, mimeType, folder = 'uploads'
 
     console.log(`✅ Файл загружен в Cloudinary: ${result.public_id}`);
     console.log(`📎 URL: ${result.secure_url}`);
+    if (result.duration) {
+      console.log(`⏱️ Длительность: ${result.duration}s`);
+    }
 
+    // Удаляем локальный файл
     if (fs.existsSync(publicPath)) {
       fs.unlinkSync(publicPath);
       console.log(`🗑️ Локальный файл удален (загружен в Cloudinary)`);
@@ -74,12 +144,13 @@ async function uploadFile(fileBuffer, originalName, mimeType, folder = 'uploads'
     return result.secure_url;
     
   } catch (error) {
-    console.error('❌ Ошибка загрузки в Cloudinary:', error);
+    console.error('❌ Ошибка загрузки в Cloudinary:', error.message);
     console.log(`📁 Файл оставлен локально: ${publicPath}`);
     return `/${folder}/${originalName}`;
   }
 }
 
+// ===== УДАЛЕНИЕ ФАЙЛА =====
 async function deleteFile(fileUrl) {
   if (!fileUrl) return;
   
@@ -97,23 +168,45 @@ async function deleteFile(fileUrl) {
   try {
     const url = new URL(fileUrl);
     const pathParts = url.pathname.split('/');
-    const publicId = pathParts.slice(pathParts.indexOf('upload') + 2).join('/');
-    const publicIdWithoutExt = publicId.replace(/\.[^/.]+$/, '');
+    const uploadIndex = pathParts.indexOf('upload');
+    if (uploadIndex === -1) return;
     
-    await cloudinary.uploader.destroy(publicIdWithoutExt);
-    console.log(`🗑️ Файл удален из Cloudinary: ${publicIdWithoutExt}`);
+    let publicId = pathParts.slice(uploadIndex + 2).join('/');
+    publicId = publicId.replace(/\.[^/.]+$/, '');
+    
+    let resourceType = 'image';
+    if (fileUrl.includes('/video/upload/') || fileUrl.includes('video/')) {
+      resourceType = 'video';
+    }
+    
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+    console.log(`🗑️ Файл удален из Cloudinary: ${publicId}`);
   } catch (error) {
-    console.error('❌ Ошибка удаления из Cloudinary:', error);
+    console.error('❌ Ошибка удаления из Cloudinary:', error.message);
   }
 }
 
-async function getFileInfo(publicId) {
-  if (!IS_CONFIGURED) return null;
+// ===== ПОЛУЧЕНИЕ ИНФОРМАЦИИ =====
+async function getFileInfo(fileUrl) {
+  if (!IS_CONFIGURED || !fileUrl) return null;
   try {
-    const result = await cloudinary.api.resource(publicId);
+    const url = new URL(fileUrl);
+    const pathParts = url.pathname.split('/');
+    const uploadIndex = pathParts.indexOf('upload');
+    if (uploadIndex === -1) return null;
+    
+    let publicId = pathParts.slice(uploadIndex + 2).join('/');
+    publicId = publicId.replace(/\.[^/.]+$/, '');
+    
+    let resourceType = 'image';
+    if (fileUrl.includes('/video/upload/') || fileUrl.includes('video/')) {
+      resourceType = 'video';
+    }
+    
+    const result = await cloudinary.api.resource(publicId, { resource_type: resourceType });
     return result;
   } catch (error) {
-    console.error('❌ Ошибка получения информации:', error);
+    console.error('❌ Ошибка получения информации:', error.message);
     return null;
   }
 }

@@ -7,7 +7,7 @@ class DatabaseBackup {
   constructor() {
     this.dbPath = path.join(__dirname, 'database.sqlite');
     this.backupDir = path.join(__dirname, 'backups');
-    this.maxBackups = 7; // ← Храним только 7 последних бэкапов
+    this.maxBackups = 16;
     
     if (!fs.existsSync(this.backupDir)) {
       fs.mkdirSync(this.backupDir, { recursive: true });
@@ -17,22 +17,28 @@ class DatabaseBackup {
     console.log(`📦 Максимум бэкапов: ${this.maxBackups}`);
   }
 
-  // ===== ПРОВЕРКА ЦЕЛОСТНОСТИ БЭКАПА =====
   validateBackup(filePath) {
     try {
+      if (!fs.existsSync(filePath)) return false;
+      
+      const stats = fs.statSync(filePath);
+      if (stats.size < 100) {
+        console.log(`⚠️ Бэкап ${path.basename(filePath)} слишком маленький (${stats.size} байт)`);
+        return false;
+      }
+      
       const compressed = fs.readFileSync(filePath);
       const data = zlib.gunzipSync(compressed);
       
-      // Проверяем что это SQLite (заголовок)
       const header = data.slice(0, 16).toString('hex');
       if (!header.startsWith('53514c69746520666f726d6174')) {
         console.log(`⚠️ Бэкап ${path.basename(filePath)} поврежден (не SQLite)`);
         return false;
       }
       
-      // Проверяем что есть хоть какие-то данные
-      if (data.length < 100) {
-        console.log(`⚠️ Бэкап ${path.basename(filePath)} слишком маленький (${data.length} байт)`);
+      const str = data.toString('utf8', 0, Math.min(data.length, 10000));
+      if (!str.includes('CREATE TABLE') && !str.includes('users')) {
+        console.log(`⚠️ Бэкап ${path.basename(filePath)} не содержит таблиц`);
         return false;
       }
       
@@ -82,8 +88,21 @@ class DatabaseBackup {
           try {
             const json = JSON.parse(data);
             const buffer = Buffer.from(json.content, 'base64');
-            console.log(`✅ Бэкап скачан с GitHub! Размер: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
-            resolve(buffer);
+            
+            try {
+              const test = zlib.gunzipSync(buffer);
+              const header = test.slice(0, 16).toString('hex');
+              if (header.startsWith('53514c69746520666f726d6174')) {
+                console.log(`✅ Бэкап скачан с GitHub! Размер: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
+                resolve(buffer);
+              } else {
+                console.log('⚠️ Бэкап с GitHub поврежден');
+                resolve(null);
+              }
+            } catch (e) {
+              console.log('⚠️ Бэкап с GitHub поврежден (не gzip)');
+              resolve(null);
+            }
           } catch (e) {
             console.error('❌ Ошибка парсинга ответа:', e);
             resolve(null);
@@ -96,41 +115,58 @@ class DatabaseBackup {
     });
   }
 
-  async restoreFromGitHub() {
-    console.log('🔄 Проверка бэкапов в GitHub...');
+  async restoreFromBackup() {
+    console.log('\n🔄 ПРОВЕРКА БЭКАПОВ...');
     
+    // 1. Сначала пробуем GitHub
     try {
-      const data = await this.downloadBackupFromGitHub();
-      if (!data) {
-        console.log('ℹ️ Бэкап не найден на GitHub, пробуем локальный...');
-        return this.restoreLatestBackup();
+      const githubData = await this.downloadBackupFromGitHub();
+      if (githubData) {
+        try {
+          const decompressed = zlib.gunzipSync(githubData);
+          fs.writeFileSync(this.dbPath, decompressed);
+          console.log(`✅ БД восстановлена из GitHub! Размер: ${(decompressed.length / 1024 / 1024).toFixed(2)} MB`);
+          return true;
+        } catch (e) {
+          console.log('⚠️ Ошибка распаковки GitHub бэкапа:', e.message);
+        }
       }
-      
-      // Проверяем что данные не пустые
-      if (data.length < 100) {
-        console.log('⚠️ Бэкап слишком маленький, возможно пустой');
-        return this.restoreLatestBackup();
-      }
-      
-      const decompressed = zlib.gunzipSync(data);
-      
-      // Проверяем что это SQLite
-      const header = decompressed.slice(0, 16).toString('hex');
-      if (!header.startsWith('53514c69746520666f726d6174')) {
-        console.log('⚠️ Бэкап поврежден (не SQLite), пробуем локальный...');
-        return this.restoreLatestBackup();
-      }
-      
-      fs.writeFileSync(this.dbPath, decompressed);
-      
-      console.log(`✅ БД восстановлена из GitHub! Размер: ${(decompressed.length / 1024 / 1024).toFixed(2)} MB`);
-      return true;
-      
-    } catch (error) {
-      console.error('❌ Ошибка восстановления из GitHub:', error.message);
-      console.log('🔄 Пробуем восстановить из локального бэкапа...');
-      return this.restoreLatestBackup();
+    } catch (e) {
+      console.log('⚠️ Ошибка загрузки из GitHub:', e.message);
     }
+    
+    // 2. Пробуем локальный бэкап
+    try {
+      const files = fs.readdirSync(this.backupDir)
+        .filter(f => f.startsWith('backup-') && f.endsWith('.sqlite.gz'))
+        .sort();
+      
+      let latest = null;
+      for (let i = files.length - 1; i >= 0; i--) {
+        const filePath = path.join(this.backupDir, files[i]);
+        if (this.validateBackup(filePath)) {
+          latest = files[i];
+          break;
+        }
+      }
+      
+      if (latest) {
+        const backupPath = path.join(this.backupDir, latest);
+        console.log(`📥 Восстановление из локального бэкапа: ${latest}`);
+        
+        const compressed = fs.readFileSync(backupPath);
+        const data = zlib.gunzipSync(compressed);
+        
+        fs.writeFileSync(this.dbPath, data);
+        console.log(`✅ БД восстановлена из локального бэкапа! Размер: ${(data.length / 1024 / 1024).toFixed(2)} MB`);
+        return true;
+      }
+    } catch (e) {
+      console.log('⚠️ Ошибка локального бэкапа:', e.message);
+    }
+    
+    console.log('⚠️ Нет валидных бэкапов для восстановления');
+    return false;
   }
 
   createBackup() {
@@ -153,12 +189,10 @@ class DatabaseBackup {
     const backupPath = path.join(this.backupDir, backupName);
     
     try {
-      // Сохраняем БД
       const data = fs.readFileSync(this.dbPath);
       const compressed = zlib.gzipSync(data, { level: 9 });
       fs.writeFileSync(backupPath, compressed);
       
-      // Сохраняем как latest
       const latestPath = path.join(this.backupDir, 'latest.sqlite.gz');
       fs.copyFileSync(backupPath, latestPath);
       
@@ -169,9 +203,6 @@ class DatabaseBackup {
       console.log(`✅ Бэкап создан: ${backupName}`);
       console.log(`📦 ${originalSize} MB → ${compressedSize} MB (экономия ${savedPercent}%)`);
       
-      // Проверяем созданный бэкап
-      this.validateBackup(backupPath);
-      
       return backupPath;
     } catch (error) {
       console.error('❌ Ошибка создания бэкапа:', error);
@@ -179,40 +210,33 @@ class DatabaseBackup {
     }
   }
 
-  // ===== УДАЛЯЕМ СТАРЫЕ БЭКАПЫ (оставляем только 7) =====
   cleanOldBackups() {
     try {
-      // Получаем все бэкапы
       let files = fs.readdirSync(this.backupDir)
         .filter(f => f.startsWith('backup-') && f.endsWith('.sqlite.gz'))
         .sort();
       
-      // Проверяем валидность каждого бэкапа
       const validBackups = [];
       for (const file of files) {
         const filePath = path.join(this.backupDir, file);
         if (this.validateBackup(filePath)) {
           validBackups.push(file);
         } else {
-          // Удаляем поврежденный бэкап
           fs.unlinkSync(filePath);
           console.log(`🗑️ Удален поврежденный бэкап: ${file}`);
         }
       }
       
-      // Сортируем по дате (новые сверху)
       validBackups.sort();
       files = validBackups;
       
       console.log(`📁 Найдено валидных бэкапов: ${files.length}`);
       
-      // Если бэкапов меньше или равно максимуму - ничего не делаем
       if (files.length <= this.maxBackups) {
         console.log(`✅ Всего ${files.length} бэкапов (лимит ${this.maxBackups})`);
         return;
       }
       
-      // Удаляем самые старые (первые в списке)
       const toDelete = files.slice(0, files.length - this.maxBackups);
       let deleted = 0;
       
@@ -227,48 +251,6 @@ class DatabaseBackup {
       
     } catch (error) {
       console.error('❌ Ошибка очистки бэкапов:', error);
-    }
-  }
-
-  restoreLatestBackup() {
-    try {
-      const files = fs.readdirSync(this.backupDir)
-        .filter(f => f.startsWith('backup-') && f.endsWith('.sqlite.gz'))
-        .sort();
-      
-      if (files.length === 0) {
-        console.log('ℹ️ Нет локальных бэкапов');
-        return false;
-      }
-      
-      // Ищем последний валидный бэкап
-      let latest = null;
-      for (let i = files.length - 1; i >= 0; i--) {
-        const filePath = path.join(this.backupDir, files[i]);
-        if (this.validateBackup(filePath)) {
-          latest = files[i];
-          break;
-        }
-      }
-      
-      if (!latest) {
-        console.log('⚠️ Нет валидных бэкапов для восстановления');
-        return false;
-      }
-      
-      const backupPath = path.join(this.backupDir, latest);
-      console.log(`📥 Восстановление из локального бэкапа: ${latest}`);
-      
-      const compressed = fs.readFileSync(backupPath);
-      const data = zlib.gunzipSync(compressed);
-      
-      fs.writeFileSync(this.dbPath, data);
-      console.log(`✅ БД восстановлена! Размер: ${(data.length / 1024 / 1024).toFixed(2)} MB`);
-      return true;
-      
-    } catch (error) {
-      console.error('❌ Ошибка восстановления из локального бэкапа:', error);
-      return false;
     }
   }
 
@@ -289,12 +271,51 @@ class DatabaseBackup {
 
 const backup = new DatabaseBackup();
 
-// ===== БЭКАП КАЖДЫЕ 7 МИНУТ =====
+// ===== ВОССТАНОВЛЕНИЕ ПРИ СТАРТЕ =====
+(async function restoreOnStart() {
+  console.log('\n🔍 ПРОВЕРКА БАЗЫ ДАННЫХ ПРИ ЗАПУСКЕ...');
+  
+  let dbExists = fs.existsSync(backup.dbPath);
+  let dbValid = false;
+  
+  if (dbExists) {
+    try {
+      const stats = fs.statSync(backup.dbPath);
+      if (stats.size >= 100) {
+        const data = fs.readFileSync(backup.dbPath);
+        const header = data.slice(0, 16).toString('hex');
+        if (header.startsWith('53514c69746520666f726d6174')) {
+          dbValid = true;
+          console.log(`✅ Текущая БД валидна (${(stats.size / 1024).toFixed(2)} KB)`);
+        }
+      }
+    } catch (e) {
+      console.log('⚠️ Ошибка проверки текущей БД:', e.message);
+    }
+  }
+  
+  if (!dbValid) {
+    console.log('⚠️ Текущая БД повреждена или отсутствует!');
+    console.log('🔄 Запускаем восстановление из бэкапа...');
+    
+    const restored = await backup.restoreFromBackup();
+    
+    if (restored) {
+      console.log('✅ БД успешно восстановлена из бэкапа!');
+    } else {
+      console.log('⚠️ Не удалось восстановить БД. Будет создана новая.');
+    }
+  }
+  
+  console.log('✅ Проверка БД завершена\n');
+})();
+
+// ===== АВТОМАТИЧЕСКИЙ БЭКАП КАЖДЫЕ 7 МИНУТ =====
 setInterval(() => {
   backup.fullBackup();
 }, 7 * 60 * 1000);
 
-// Бэкап при выходе
+// ===== БЭКАП ПРИ ВЫХОДЕ =====
 process.on('SIGINT', () => {
   console.log('\n🔄 Бэкап перед выходом...');
   backup.fullBackup().then(() => {
@@ -311,9 +332,8 @@ process.on('SIGTERM', () => {
   });
 });
 
-// Бэкап через 5 секунд после старта
 setTimeout(() => {
   backup.fullBackup();
-}, 5000);
+}, 10000);
 
 module.exports = backup;

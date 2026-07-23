@@ -529,7 +529,80 @@ body.chat-open #tc {
 .msg.sent .msg-audio-container { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
 .msg.received .msg-audio-wave .bar { background: var(--accent-light); }
 
-/* ========== ВИДЕО СООБЩЕНИЯ ========== */
+/* ========== ВИДЕО СООБЩЕНИЯ (КРУЖКИ) ========== */
+/* Стили для видео-кружков в сообщениях */
+.video-circle {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #000;
+  position: relative;
+  cursor: pointer;
+  border: 3px solid var(--border);
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.video-circle:hover {
+  border-color: var(--accent);
+  transform: scale(1.02);
+}
+
+.video-circle video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.video-circle .play-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.video-circle:hover .play-overlay {
+  opacity: 1;
+}
+
+.video-circle .play-overlay svg {
+  width: 40px;
+  height: 40px;
+  fill: rgba(255,255,255,0.9);
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+
+.video-circle .duration {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.8);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.video-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
 .msg-video-round-wrapper {
   position: relative;
   display: inline-block;
@@ -746,6 +819,8 @@ body.chat-open #tc {
   .file-card img { height: 90px; }
   .msg { max-width: 80%; font-size: 11px; padding: 6px 9px; }
   .msg img.msg-img { max-width: 130px; max-height: 130px; }
+  .video-circle { width: 140px; height: 140px; }
+  .video-circle .play-overlay svg { width: 30px; height: 30px; }
   .msg-video-round-wrapper { width: 90px; height: 90px; }
   .msg-video-round { width: 90px; height: 90px; }
   .msg-video-play-badge { width: 24px; height: 24px; font-size: 10px; }
@@ -1738,6 +1813,80 @@ function attachMsgEvents(el, msg) {
     });
 }
 
+// ===== ФУНКЦИЯ СОЗДАНИЯ ВИДЕО-КРУЖКА =====
+function createVideoElement(videoData) {
+    var wrapper = document.createElement('div');
+    wrapper.className = 'video-wrapper';
+    
+    var circle = document.createElement('div');
+    circle.className = 'video-circle';
+    
+    var video = document.createElement('video');
+    video.src = videoData.url || videoData.file_path || videoData;
+    video.muted = true;
+    video.loop = false;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.preload = 'metadata';
+    
+    // Автовоспроизведение при наведении
+    circle.addEventListener('mouseenter', function() {
+        video.play().catch(function() {});
+    });
+    
+    circle.addEventListener('mouseleave', function() {
+        video.pause();
+    });
+    
+    // Клик для воспроизведения
+    circle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (video.paused) {
+            video.play().catch(function() {});
+        } else {
+            video.pause();
+        }
+    });
+    
+    // Двойной клик для полноэкранного просмотра
+    circle.addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        var url = videoData.url || videoData.file_path || videoData;
+        openVideoFullscreen(url, videoData.file_type || 'video/mp4');
+    });
+    
+    // Длительность
+    video.addEventListener('loadedmetadata', function() {
+        var duration = Math.round(video.duration);
+        if (duration > 0 && !circle.querySelector('.duration')) {
+            var durationEl = document.createElement('div');
+            durationEl.className = 'duration';
+            durationEl.textContent = duration + 's';
+            circle.appendChild(durationEl);
+        }
+    });
+    
+    // Оверлей с кнопкой play
+    var overlay = document.createElement('div');
+    overlay.className = 'play-overlay';
+    overlay.innerHTML = '<svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>';
+    circle.appendChild(overlay);
+    circle.appendChild(video);
+    wrapper.appendChild(circle);
+    
+    return wrapper;
+}
+
+// ===== ОТКРЫТИЕ ВИДЕО В ПОЛНОЭКРАННОМ РЕЖИМЕ =====
+function openVideoFullscreen(url, type) {
+    document.getElementById('lb').classList.add('active');
+    document.body.style.overflow = 'hidden';
+    document.getElementById('lbc').innerHTML = 
+        '<video controls autoplay playsinline style="max-width:95vw;max-height:90vh;border-radius:8px;background:#000;">' +
+        '<source src="' + url + '" type="' + (type || 'video/mp4') + '">' +
+        '</video>';
+}
+
 function lm(id,silent,callback){
     api('/api/messages/'+id).then(function(r){return r.json()}).then(function(d){
         var c=document.getElementById('cm');if(!c)return;
@@ -1774,15 +1923,20 @@ function lm(id,silent,callback){
                         con+='<img src="'+displaySrc+'" class="msg-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\')" loading="lazy">';
                     }
                 }else if(m.file_type&&m.file_type.startsWith('video/')){
-                    var videoSrc = m.file_path;
-                    if (videoSrc && !videoSrc.startsWith('http') && !videoSrc.startsWith('/')) {
-                        videoSrc = '/' + videoSrc;
-                    }
-                    con+='<div class="msg-video-round-wrapper" onclick="event.stopPropagation();openVideoFullscreen(\'' + videoSrc + '\',\'' + m.file_type + '\')">' +
-                           '<video src="' + videoSrc + '" class="msg-video-round" preload="metadata" muted playsinline></video>' +
-                           '<div class="msg-video-play-badge">▶</div>' +
-                           '<div class="msg-video-duration-badge">Видео</div>' +
-                           '</div>';
+                    // ===== ВИДЕО-КРУЖОК =====
+                    var videoData = {
+                        url: m.file_path,
+                        file_path: m.file_path,
+                        file_type: m.file_type,
+                        duration: m.duration || 0
+                    };
+                    var videoEl = createVideoElement(videoData);
+                    // Оборачиваем видео в контейнер с классом для стилизации
+                    var videoWrapper = document.createElement('div');
+                    videoWrapper.style.display = 'inline-block';
+                    videoWrapper.appendChild(videoEl);
+                    // Добавляем в сообщение
+                    con += videoWrapper.innerHTML;
                 }else if(m.file_type&&m.file_type.startsWith('audio/')){
                     con+='<div class="msg-audio-container"><button class="msg-audio-play" onclick="event.stopPropagation();playAudio(this,\''+m.file_path+'\')">▶</button><div class="msg-audio-wave" onclick="event.stopPropagation();playAudio(this.parentElement.querySelector(\'.msg-audio-play\'),\''+m.file_path+'\')">' +
                            '<div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>' +
@@ -1856,15 +2010,6 @@ function lm(id,silent,callback){
             }
         }).catch(function(){});
     });
-}
-
-function openVideoFullscreen(url, type) {
-    document.getElementById('lb').classList.add('active');
-    document.body.style.overflow = 'hidden';
-    document.getElementById('lbc').innerHTML = 
-        '<video controls autoplay playsinline style="max-width:95vw;max-height:90vh;border-radius:8px;background:#000;">' +
-        '<source src="'+url+'" type="'+(type || 'video/mp4')+'">' +
-        '</video>';
 }
 
 async function sendPastedFiles(chatId){
