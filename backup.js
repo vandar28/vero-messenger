@@ -30,12 +30,14 @@ class DatabaseBackup {
       const compressed = fs.readFileSync(filePath);
       const data = zlib.gunzipSync(compressed);
       
+      // Проверяем SQLite заголовок
       const header = data.slice(0, 16).toString('hex');
       if (!header.startsWith('53514c69746520666f726d6174')) {
         console.log(`⚠️ Бэкап ${path.basename(filePath)} поврежден (не SQLite)`);
         return false;
       }
       
+      // Проверяем наличие таблиц
       const str = data.toString('utf8', 0, Math.min(data.length, 10000));
       if (!str.includes('CREATE TABLE') && !str.includes('users')) {
         console.log(`⚠️ Бэкап ${path.basename(filePath)} не содержит таблиц`);
@@ -115,32 +117,17 @@ class DatabaseBackup {
     });
   }
 
+  // ===== ВОССТАНОВЛЕНИЕ ИЗ БЭКАПА (ГЛАВНАЯ ФУНКЦИЯ) =====
   async restoreFromBackup() {
     console.log('\n🔄 ПРОВЕРКА БЭКАПОВ...');
     
-    // 1. Сначала пробуем GitHub
-    try {
-      const githubData = await this.downloadBackupFromGitHub();
-      if (githubData) {
-        try {
-          const decompressed = zlib.gunzipSync(githubData);
-          fs.writeFileSync(this.dbPath, decompressed);
-          console.log(`✅ БД восстановлена из GitHub! Размер: ${(decompressed.length / 1024 / 1024).toFixed(2)} MB`);
-          return true;
-        } catch (e) {
-          console.log('⚠️ Ошибка распаковки GitHub бэкапа:', e.message);
-        }
-      }
-    } catch (e) {
-      console.log('⚠️ Ошибка загрузки из GitHub:', e.message);
-    }
-    
-    // 2. Пробуем локальный бэкап
+    // 1. Сначала пробуем локальный бэкап (быстрее)
     try {
       const files = fs.readdirSync(this.backupDir)
         .filter(f => f.startsWith('backup-') && f.endsWith('.sqlite.gz'))
         .sort();
       
+      // Ищем последний валидный бэкап
       let latest = null;
       for (let i = files.length - 1; i >= 0; i--) {
         const filePath = path.join(this.backupDir, files[i]);
@@ -160,9 +147,28 @@ class DatabaseBackup {
         fs.writeFileSync(this.dbPath, data);
         console.log(`✅ БД восстановлена из локального бэкапа! Размер: ${(data.length / 1024 / 1024).toFixed(2)} MB`);
         return true;
+      } else {
+        console.log('ℹ️ Нет валидных локальных бэкапов');
       }
     } catch (e) {
       console.log('⚠️ Ошибка локального бэкапа:', e.message);
+    }
+    
+    // 2. Пробуем GitHub
+    try {
+      const githubData = await this.downloadBackupFromGitHub();
+      if (githubData) {
+        try {
+          const decompressed = zlib.gunzipSync(githubData);
+          fs.writeFileSync(this.dbPath, decompressed);
+          console.log(`✅ БД восстановлена из GitHub! Размер: ${(decompressed.length / 1024 / 1024).toFixed(2)} MB`);
+          return true;
+        } catch (e) {
+          console.log('⚠️ Ошибка распаковки GitHub бэкапа:', e.message);
+        }
+      }
+    } catch (e) {
+      console.log('⚠️ Ошибка загрузки из GitHub:', e.message);
     }
     
     console.log('⚠️ Нет валидных бэкапов для восстановления');
@@ -193,6 +199,7 @@ class DatabaseBackup {
       const compressed = zlib.gzipSync(data, { level: 9 });
       fs.writeFileSync(backupPath, compressed);
       
+      // Сохраняем как latest
       const latestPath = path.join(this.backupDir, 'latest.sqlite.gz');
       fs.copyFileSync(backupPath, latestPath);
       
@@ -271,16 +278,18 @@ class DatabaseBackup {
 
 const backup = new DatabaseBackup();
 
-// ===== ВОССТАНОВЛЕНИЕ ПРИ СТАРТЕ =====
+// ===== ВОССТАНОВЛЕНИЕ ПРИ СТАРТЕ (ОБЯЗАТЕЛЬНО) =====
 (async function restoreOnStart() {
   console.log('\n🔍 ПРОВЕРКА БАЗЫ ДАННЫХ ПРИ ЗАПУСКЕ...');
   
   let dbExists = fs.existsSync(backup.dbPath);
   let dbValid = false;
+  let dbSize = 0;
   
   if (dbExists) {
     try {
       const stats = fs.statSync(backup.dbPath);
+      dbSize = stats.size;
       if (stats.size >= 100) {
         const data = fs.readFileSync(backup.dbPath);
         const header = data.slice(0, 16).toString('hex');
@@ -294,6 +303,7 @@ const backup = new DatabaseBackup();
     }
   }
   
+  // ЕСЛИ БД ПОВРЕЖДЕНА ИЛИ ОТСУТСТВУЕТ - ВОССТАНАВЛИВАЕМ
   if (!dbValid) {
     console.log('⚠️ Текущая БД повреждена или отсутствует!');
     console.log('🔄 Запускаем восстановление из бэкапа...');
@@ -305,15 +315,70 @@ const backup = new DatabaseBackup();
     } else {
       console.log('⚠️ Не удалось восстановить БД. Будет создана новая.');
     }
+  } else {
+    // Даже если БД валидна, проверяем есть ли в ней пользователи
+    try {
+      const data = fs.readFileSync(backup.dbPath);
+      const str = data.toString('utf8', 0, Math.min(data.length, 5000));
+      if (!str.includes('ad6@gmail.com') && !str.includes('users')) {
+        console.log('⚠️ В БД нет пользователей! Восстанавливаем из бэкапа...');
+        const restored = await backup.restoreFromBackup();
+        if (restored) {
+          console.log('✅ БД восстановлена (была пустая)');
+        }
+      }
+    } catch (e) {
+      console.log('⚠️ Ошибка проверки содержимого БД:', e.message);
+    }
   }
   
   console.log('✅ Проверка БД завершена\n');
 })();
 
-// ===== АВТОМАТИЧЕСКИЙ БЭКАП КАЖДЫЕ 7 МИНУТ =====
-setInterval(() => {
-  backup.fullBackup();
-}, 7 * 60 * 1000);
+// ===== СОХРАНЯЕМ БЭКАП В ПАМЯТЬ =====
+let lastBackupData = null;
+
+// ===== АВТОМАТИЧЕСКИЙ БЭКАП КАЖДЫЕ 5 МИНУТ =====
+setInterval(async () => {
+  console.log('⏰ Автоматический бэкап...');
+  await backup.fullBackup();
+  
+  // Сохраняем в память на случай проблем
+  if (fs.existsSync(backup.dbPath)) {
+    try {
+      lastBackupData = fs.readFileSync(backup.dbPath);
+      console.log('💾 Бэкап сохранен в памяти');
+    } catch (e) {}
+  }
+}, 5 * 60 * 1000);
+
+// ===== ПРОВЕРКА БД КАЖДЫЕ 2 МИНУТЫ =====
+setInterval(async () => {
+  try {
+    if (!fs.existsSync(backup.dbPath)) {
+      console.log('⚠️ БД исчезла! Восстанавливаем из бэкапа...');
+      await backup.restoreFromBackup();
+      return;
+    }
+    
+    const stats = fs.statSync(backup.dbPath);
+    if (stats.size < 100) {
+      console.log('⚠️ БД стала слишком маленькой! Восстанавливаем из бэкапа...');
+      await backup.restoreFromBackup();
+      return;
+    }
+    
+    // Проверяем, есть ли в БД пользователи
+    const data = fs.readFileSync(backup.dbPath);
+    const str = data.toString('utf8', 0, Math.min(data.length, 2000));
+    if (!str.includes('ad6@gmail.com') && !str.includes('users')) {
+      console.log('⚠️ В БД нет пользователей! Восстанавливаем из бэкапа...');
+      await backup.restoreFromBackup();
+    }
+  } catch (e) {
+    console.log('⚠️ Ошибка проверки БД:', e.message);
+  }
+}, 2 * 60 * 1000);
 
 // ===== БЭКАП ПРИ ВЫХОДЕ =====
 process.on('SIGINT', () => {
@@ -332,8 +397,9 @@ process.on('SIGTERM', () => {
   });
 });
 
+// Бэкап через 3 секунды после старта
 setTimeout(() => {
   backup.fullBackup();
-}, 10000);
+}, 3000);
 
 module.exports = backup;

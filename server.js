@@ -25,6 +25,55 @@ app.use(express.static('public'));
 let db;
 const DB_PATH = 'database.sqlite';
 
+// ===== ПРОВЕРКА БД ПРИ ЗАПУСКЕ =====
+(async function ensureDatabase() {
+  console.log('🔍 ПРОВЕРКА БД ПРИ ЗАПУСКЕ СЕРВЕРА...');
+  
+  let needRestore = false;
+  
+  if (!fs.existsSync(DB_PATH)) {
+    console.log('⚠️ БД не существует!');
+    needRestore = true;
+  } else {
+    try {
+      const stats = fs.statSync(DB_PATH);
+      if (stats.size < 100) {
+        console.log('⚠️ БД слишком маленькая!');
+        needRestore = true;
+      } else {
+        const data = fs.readFileSync(DB_PATH);
+        const header = data.slice(0, 16).toString('hex');
+        if (!header.startsWith('53514c69746520666f726d6174')) {
+          console.log('⚠️ БД повреждена!');
+          needRestore = true;
+        } else {
+          // Проверяем есть ли пользователи
+          const str = data.toString('utf8', 0, Math.min(data.length, 5000));
+          if (!str.includes('ad6@gmail.com') && !str.includes('users')) {
+            console.log('⚠️ В БД нет пользователей!');
+            needRestore = true;
+          }
+        }
+      }
+    } catch (e) {
+      console.log('⚠️ Ошибка проверки БД:', e.message);
+      needRestore = true;
+    }
+  }
+  
+  if (needRestore) {
+    console.log('🔄 Восстанавливаем БД из бэкапа...');
+    const restored = await backup.restoreFromBackup();
+    if (restored) {
+      console.log('✅ БД успешно восстановлена!');
+    } else {
+      console.log('⚠️ Не удалось восстановить БД. Будет создана новая.');
+    }
+  } else {
+    console.log('✅ БД валидна');
+  }
+})();
+
 // ===== УДАЛЯЕМ ПОВРЕЖДЕННУЮ БД =====
 if (fs.existsSync(DB_PATH)) {
   try {
@@ -39,6 +88,40 @@ if (fs.existsSync(DB_PATH)) {
   }
 }
 
+// ===== ПРОВЕРКА БД КАЖДЫЕ 2 МИНУТЫ =====
+setInterval(async () => {
+  try {
+    if (!fs.existsSync(DB_PATH)) {
+      console.log('⚠️ БД исчезла! Восстанавливаем из бэкапа...');
+      await backup.restoreFromBackup();
+      return;
+    }
+    
+    const stats = fs.statSync(DB_PATH);
+    if (stats.size < 100) {
+      console.log('⚠️ БД стала слишком маленькой! Восстанавливаем из бэкапа...');
+      await backup.restoreFromBackup();
+      return;
+    }
+    
+    const data = fs.readFileSync(DB_PATH);
+    const header = data.slice(0, 16).toString('hex');
+    if (!header.startsWith('53514c69746520666f726d6174')) {
+      console.log('⚠️ БД повреждена! Восстанавливаем из бэкапа...');
+      await backup.restoreFromBackup();
+      return;
+    }
+    
+    const str = data.toString('utf8', 0, Math.min(data.length, 2000));
+    if (!str.includes('ad6@gmail.com') && !str.includes('users')) {
+      console.log('⚠️ В БД нет пользователей! Восстанавливаем из бэкапа...');
+      await backup.restoreFromBackup();
+    }
+  } catch (e) {
+    console.log('⚠️ Ошибка проверки БД:', e.message);
+  }
+}, 2 * 60 * 1000);
+
 // ===== ФУНКЦИЯ ЗАПУСКА БД =====
 async function startDB() {
   const SQL = await initSqlJs();
@@ -49,7 +132,7 @@ async function startDB() {
   db.run("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, email TEXT UNIQUE, password TEXT, avatar TEXT DEFAULT NULL, is_temp INTEGER DEFAULT 0, created_at DATETIME DEFAULT (datetime('now','+3 hours')), last_seen DATETIME DEFAULT NULL, is_online INTEGER DEFAULT 0, is_typing INTEGER DEFAULT 0, typing_to INTEGER DEFAULT NULL)");
   db.run("CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, user_id INTEGER, original_name TEXT, filename TEXT, file_type TEXT, file_size INTEGER, upload_date DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS friends (id INTEGER PRIMARY KEY AUTOINCREMENT, from_user INTEGER, to_user INTEGER, status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
-  db.run("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER, receiver_id INTEGER, message_text TEXT, file_name TEXT, file_type TEXT, file_path TEXT, is_read INTEGER DEFAULT 0, deleted_for_sender INTEGER DEFAULT 0, deleted_for_receiver INTEGER DEFAULT 0, forward_from TEXT DEFAULT NULL, forward_from_name TEXT DEFAULT NULL, is_self_destruct INTEGER DEFAULT 0, destruct_after_view INTEGER DEFAULT 0, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
+  db.run("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER, receiver_id INTEGER, message_text TEXT, file_name TEXT, file_type TEXT, file_path TEXT, is_read INTEGER DEFAULT 0, deleted_for_sender INTEGER DEFAULT 0, deleted_for_receiver INTEGER DEFAULT 0, forward_from TEXT DEFAULT NULL, forward_from_name TEXT DEFAULT NULL, is_self_destruct INTEGER DEFAULT 0, destruct_after_view INTEGER DEFAULT 0, reply_to INTEGER DEFAULT NULL, reply_text TEXT DEFAULT NULL, reply_sender TEXT DEFAULT NULL, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS avatars (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, avatar_path TEXT, is_active INTEGER DEFAULT 0, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS shared_pins (id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER, chat_user1 INTEGER, chat_user2 INTEGER, pinned_by INTEGER, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS private_pins (id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER, chat_user1 INTEGER, chat_user2 INTEGER, pinned_by INTEGER, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
@@ -69,6 +152,9 @@ async function startDB() {
   try { db.run("ALTER TABLE users ADD COLUMN is_online INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN is_typing INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN typing_to INTEGER DEFAULT NULL"); } catch(e) {}
+  try { db.run("ALTER TABLE messages ADD COLUMN reply_to INTEGER DEFAULT NULL"); } catch(e) {}
+  try { db.run("ALTER TABLE messages ADD COLUMN reply_text TEXT DEFAULT NULL"); } catch(e) {}
+  try { db.run("ALTER TABLE messages ADD COLUMN reply_sender TEXT DEFAULT NULL"); } catch(e) {}
   
   await createAdminAccount();
   saveDB();
@@ -95,8 +181,12 @@ function deleteUserData(userId) {
   const avatars = dbAll("SELECT avatar_path FROM avatars WHERE user_id=?", [userId]);
   avatars.forEach(function(a) { 
     if (a.avatar_path) {
-      const fp = path.join(__dirname, 'public', a.avatar_path);
-      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+      if (a.avatar_path.startsWith('http')) {
+        storage.deleteFile(a.avatar_path).catch(function() {});
+      } else {
+        const fp = path.join(__dirname, 'public', a.avatar_path);
+        if (fs.existsSync(fp)) fs.unlinkSync(fp);
+      }
     }
   });
   dbRun("DELETE FROM avatars WHERE user_id=?", [userId]);
@@ -104,8 +194,12 @@ function deleteUserData(userId) {
   const files = dbAll("SELECT filename FROM files WHERE user_id=?", [userId]);
   files.forEach(function(f) { 
     if (f.filename) {
-      const fp = path.join(__dirname, 'public', 'uploads', f.filename);
-      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+      if (f.filename.startsWith('http')) {
+        storage.deleteFile(f.filename).catch(function() {});
+      } else {
+        const fp = path.join(__dirname, 'public', 'uploads', f.filename);
+        if (fs.existsSync(fp)) fs.unlinkSync(fp);
+      }
     }
   });
   dbRun("DELETE FROM files WHERE user_id=?", [userId]);
@@ -113,8 +207,12 @@ function deleteUserData(userId) {
   const destructFiles = dbAll("SELECT file_path FROM messages WHERE sender_id=? AND is_self_destruct=1", [userId]);
   destructFiles.forEach(function(f) { 
     if(f.file_path) {
-      const fp = path.join(__dirname, 'public', f.file_path); 
-      if (fs.existsSync(fp)) fs.unlinkSync(fp); 
+      if (f.file_path.startsWith('http')) {
+        storage.deleteFile(f.file_path).catch(function() {});
+      } else {
+        const fp = path.join(__dirname, 'public', f.file_path); 
+        if (fs.existsSync(fp)) fs.unlinkSync(fp); 
+      }
     }
   });
   
@@ -681,8 +779,13 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
     
     const isSelfDestruct = req.body.is_self_destruct === 'true' || req.body.is_self_destruct === true ? 1 : 0;
     
-    dbRun('INSERT INTO messages (sender_id, receiver_id, message_text, file_name, file_type, file_path, forward_from, forward_from_name, is_self_destruct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-      [req.userId, fid, text, fileName, fileType, filePath, forwardFrom, forwardFromName, isSelfDestruct]);
+    // Ответ на сообщение
+    const replyTo = req.body.reply_to || null;
+    const replyText = req.body.reply_text || null;
+    const replySender = req.body.reply_sender || null;
+    
+    dbRun('INSERT INTO messages (sender_id, receiver_id, message_text, file_name, file_type, file_path, forward_from, forward_from_name, is_self_destruct, reply_to, reply_text, reply_sender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+      [req.userId, fid, text, fileName, fileType, filePath, forwardFrom, forwardFromName, isSelfDestruct, replyTo, replyText, replySender]);
     saveDB();
     res.json({ ok: true });
   } catch (error) {
