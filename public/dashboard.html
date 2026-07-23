@@ -465,25 +465,127 @@ body.chat-open #tc {
 .msg-actions-bar .btn{font-size:10px;padding:5px 10px}
 
 /* ========== ГОЛОСОВЫЕ СООБЩЕНИЯ ========== */
-.msg-audio-container {display: flex;align-items: center;gap: 6px;min-width: 150px;max-width: 200px;}
-.msg-audio-play {width: 28px;height: 28px;min-width: 28px;border-radius: 50%;background: var(--accent);border: none;color: #fff;font-size: 11px;cursor: pointer;display: flex;align-items: center;justify-content: center;transition: all 0.2s ease;}
+.msg-audio-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 160px;
+  max-width: 220px;
+  background: var(--bg-input);
+  padding: 4px 8px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+}
+
+.msg-audio-play {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
 .msg-audio-play:hover { transform: scale(1.05); }
 .msg-audio-play:active { transform: scale(0.92); }
 .msg-audio-play.playing { background: var(--red); }
-.msg-audio-wave {flex: 1;height: 22px;display: flex;align-items: center;gap: 1px;cursor: pointer;}
-.msg-audio-wave .bar {flex: 1;background: var(--accent-light);border-radius: 1px;transition: all 0.3s ease;min-width: 2px;}
-.msg-audio-wave .bar:nth-child(1) { height: 30%; }.msg-audio-wave .bar:nth-child(2) { height: 60%; }.msg-audio-wave .bar:nth-child(3) { height: 45%; }.msg-audio-wave .bar:nth-child(4) { height: 90%; }.msg-audio-wave .bar:nth-child(5) { height: 70%; }.msg-audio-wave .bar:nth-child(6) { height: 35%; }.msg-audio-wave .bar:nth-child(7) { height: 100%; }.msg-audio-wave .bar:nth-child(8) { height: 55%; }.msg-audio-wave .bar:nth-child(9) { height: 80%; }.msg-audio-wave .bar:nth-child(10) { height: 40%; }.msg-audio-wave .bar:nth-child(11) { height: 65%; }.msg-audio-wave .bar:nth-child(12) { height: 50%; }.msg-audio-wave .bar:nth-child(13) { height: 85%; }.msg-audio-wave .bar:nth-child(14) { height: 30%; }.msg-audio-wave .bar:nth-child(15) { height: 75%; }
-.msg-audio-duration {font-size: 9px;color: inherit;opacity: 0.7;min-width: 28px;text-align: right;font-weight: 500;}
-.msg.sent .msg-audio-wave .bar { background: rgba(255,255,255,0.5); }
+
+.msg-audio-wave {
+  flex: 1;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.msg-audio-wave .bar {
+  flex: 1;
+  background: var(--accent-light);
+  border-radius: 2px;
+  transition: all 0.15s ease;
+  min-width: 2px;
+  height: 10px;
+}
+
+.msg-audio-duration {
+  font-size: 9px;
+  color: inherit;
+  opacity: 0.7;
+  min-width: 32px;
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.msg.sent .msg-audio-wave .bar { background: rgba(255,255,255,0.6); }
+.msg.sent .msg-audio-container { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
 .msg.received .msg-audio-wave .bar { background: var(--accent-light); }
 
 /* ========== ВИДЕО СООБЩЕНИЯ ========== */
-.msg-video-round-wrapper {position: relative;display: inline-block;cursor: pointer;}
-.msg-video-round {width: 110px;height: 110px;border-radius: 50%;object-fit: cover;display: block;margin: 2px 0;border: 2px solid var(--border);transition: all 0.2s ease;background: #000;}
+.msg-video-round-wrapper {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  border-radius: 50%;
+  overflow: hidden;
+  width: 110px;
+  height: 110px;
+  flex-shrink: 0;
+}
+
+.msg-video-round {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  border: 2px solid var(--border);
+  transition: all 0.2s ease;
+  background: #000;
+}
+
 .msg-video-round:hover { border-color: var(--accent); transform: scale(1.02); }
 .msg-video-round:active { transform: scale(0.95); }
-.msg-video-play-badge {position: absolute;top: 50%;left: 50%;transform: translate(-50%, -50%);width: 30px;height: 30px;border-radius: 50%;background: rgba(0,0,0,0.6);backdrop-filter: blur(4px);color: #fff;font-size: 12px;display: flex;align-items: center;justify-content: center;pointer-events: none;border: 2px solid rgba(255,255,255,0.3);}
-.msg-video-duration-badge {position: absolute;bottom: 6px;right: 6px;background: rgba(0,0,0,0.75);backdrop-filter: blur(4px);color: #fff;padding: 2px 5px;border-radius: 3px;font-size: 8px;font-weight: 500;}
+
+.msg-video-play-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  border: 2px solid rgba(255,255,255,0.3);
+}
+
+.msg-video-duration-badge {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 8px;
+  font-weight: 500;
+}
 
 .msg .file-box{background:rgba(255,255,255,0.06);padding:5px 7px;border-radius:5px;margin:2px 0;cursor:pointer;display:flex;align-items:center;gap:5px;transition:0.2s;font-size:9px}
 .msg .file-box:hover{background:rgba(255,255,255,0.12)}
@@ -644,12 +746,13 @@ body.chat-open #tc {
   .file-card img { height: 90px; }
   .msg { max-width: 80%; font-size: 11px; padding: 6px 9px; }
   .msg img.msg-img { max-width: 130px; max-height: 130px; }
-  .msg-video-round { width: 100px; height: 100px; }
-  .msg-video-play-badge { width: 28px; height: 28px; font-size: 11px; }
+  .msg-video-round-wrapper { width: 90px; height: 90px; }
+  .msg-video-round { width: 90px; height: 90px; }
+  .msg-video-play-badge { width: 24px; height: 24px; font-size: 10px; }
   .msg-audio-container { min-width: 140px; max-width: 180px; }
   .msg-audio-play { width: 26px; height: 26px; min-width: 26px; font-size: 11px; }
   .msg-audio-wave { height: 20px; gap: 1px; }
-  .msg-audio-duration { font-size: 8px; min-width: 24px; }
+  .msg-audio-duration { font-size: 8px; min-width: 28px; }
   .chat-input-area input[type="text"] { padding: 8px 9px; font-size: 11px; }
   .chat-fullscreen { padding: 4px; }
   .reaction-picker { bottom: 100px; padding: 5px 8px; }
@@ -927,7 +1030,7 @@ function st(tab,el){
 function ol(url,type,msgId,isSelfDestruct){
     document.getElementById('lb').classList.add('active');document.body.style.overflow='hidden';
     if(type&&type.startsWith('image/'))document.getElementById('lbc').innerHTML='<img src="'+url+'">';
-    else if(type&&type.startsWith('video/'))document.getElementById('lbc').innerHTML='<video controls autoplay><source src="'+url+'" type="'+type+'"></video>';
+    else if(type&&type.startsWith('video/'))document.getElementById('lbc').innerHTML='<video controls autoplay playsinline style="max-width:95vw;max-height:90vh;border-radius:8px;background:#000;"><source src="'+url+'" type="'+(type||'video/mp4')+'"></video>';
     else if(type&&type.startsWith('audio/'))document.getElementById('lbc').innerHTML='<audio controls autoplay style="width:300px"><source src="'+url+'" type="'+type+'"></audio>';
     if(isSelfDestruct&&msgId&&type&&type.startsWith('image/')){currentDestructMsgId=msgId}else{currentDestructMsgId=null}
 }
@@ -1499,19 +1602,34 @@ function navigateToMessage(msgId){
 }
 
 function startReplyToMessage(msgId, messageText, filePath, fileName) {
+    var msgData = cachedMessages[ct.id] || [];
+    var originalMsg = null;
+    for (var i = 0; i < msgData.length; i++) {
+        if (msgData[i].id == msgId) {
+            originalMsg = msgData[i];
+            break;
+        }
+    }
+    
     replyToMsg = {
         id: msgId,
-        text: messageText || (fileName || 'Файл')
+        text: messageText || (fileName || 'Файл'),
+        sender: originalMsg ? originalMsg.username : 'Пользователь'
     };
     
     var replyIndicator = document.getElementById('replyIndicator');
     if (replyIndicator) {
         var replyText = replyToMsg.text || 'Сообщение';
-        if (replyText.length > 50) replyText = replyText.substring(0, 50) + '...';
+        if (replyText.length > 40) replyText = replyText.substring(0, 40) + '...';
+        
+        var senderName = replyToMsg.sender || 'Пользователь';
         
         replyIndicator.innerHTML = 
-            '<span>↩️ Ответ на: <strong>' + replyText + '</strong></span>' +
-            '<button onclick="cancelReply()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>';
+            '<div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;">' +
+            '<span style="font-size:10px;color:var(--accent-light);">↩️ Ответ для <strong>' + senderName + '</strong>:</span>' +
+            '<span style="font-size:10px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">"' + replyText + '"</span>' +
+            '</div>' +
+            '<button onclick="cancelReply()" style="background:var(--red-bg);border:none;color:var(--red);cursor:pointer;font-size:12px;border-radius:4px;padding:2px 8px;">✕</button>';
         replyIndicator.style.display = 'flex';
     }
     
@@ -1540,25 +1658,29 @@ function showReplyButton(el, msgId) {
     
     document.querySelectorAll('.reply-btn-context').forEach(function(b) { b.remove(); });
     
+    var isSent = msg.sender_id === U.id;
+    var offset = isSent ? 'right:-70px;' : 'left:-70px;';
+    
     var replyBtn = document.createElement('button');
     replyBtn.className = 'reply-btn-context';
     replyBtn.textContent = '↩️ Ответить';
     replyBtn.style.cssText = 
-        'position:fixed;' +
-        'bottom:80px;' +
-        'left:50%;' +
-        'transform:translateX(-50%);' +
+        'position:absolute;' +
+        'top:50%;' +
+        'transform:translateY(-50%);' +
+        offset +
         'background:var(--accent);' +
         'color:#fff;' +
         'border:none;' +
-        'border-radius:12px;' +
-        'padding:10px 20px;' +
-        'font-size:13px;' +
+        'border-radius:8px;' +
+        'padding:4px 10px;' +
+        'font-size:9px;' +
         'cursor:pointer;' +
-        'z-index:100;' +
-        'box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
+        'z-index:10;' +
+        'white-space:nowrap;' +
         'font-family:Inter,sans-serif;' +
-        'animation:fadeIn 0.2s ease;';
+        'animation:fadeIn 0.2s ease;' +
+        'box-shadow:0 2px 10px rgba(0,0,0,0.3);';
     
     replyBtn.onclick = function(e) {
         e.stopPropagation();
@@ -1566,13 +1688,14 @@ function showReplyButton(el, msgId) {
         this.remove();
     };
     
-    document.body.appendChild(replyBtn);
+    el.style.position = 'relative';
+    el.appendChild(replyBtn);
     
     setTimeout(function() {
         if (replyBtn.parentNode) {
             replyBtn.remove();
         }
-    }, 5000);
+    }, 3000);
     
     document.addEventListener('click', function closeReply(e) {
         if (!e.target.closest('.reply-btn-context') && !e.target.closest('.msg')) {
@@ -1588,94 +1711,31 @@ function attachMsgEvents(el, msg) {
     var msgId = msg.id;
     var isSent = msg.sender_id === U.id;
     
-    // ===== КЛИК = РЕАКЦИИ =====
     el.addEventListener('click', function(e) {
         e.stopPropagation();
         if (el.classList.contains('selected')) return;
         toggleReactionPicker(el, msgId);
     });
     
-    // ===== ДВОЙНОЙ КЛИК = ВЫДЕЛЕНИЕ =====
     el.addEventListener('dblclick', function(e) {
         e.stopPropagation();
         toggleMessage(el, msgId, isSent);
     });
     
-    // ===== ДОЛГОЕ НАЖАТИЕ (телефон) =====
     var longPressTimer = null;
     el.addEventListener('touchstart', function(e) {
         longPressTimer = setTimeout(function() {
-            toggleMessage(el, msgId, isSent);
-        }, 500);
+            if (navigator.vibrate) navigator.vibrate(20);
+            showReplyButton(el, msgId);
+        }, 400);
     });
     el.addEventListener('touchend', function() { clearTimeout(longPressTimer); });
     el.addEventListener('touchmove', function() { clearTimeout(longPressTimer); });
     
-    // ===== ПРАВЫЙ КЛИК (ПК) - ОТВЕТ/ВЫДЕЛЕНИЕ =====
     el.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         showReplyButton(el, msgId);
     });
-    
-    // ===== СВАЙП ВЛЕВО (ТЕЛЕФОН) =====
-    var touchStartX = 0;
-    var touchStartY = 0;
-    var isSwiping = false;
-    
-    el.addEventListener('touchstart', function(e) {
-        touchStartX = e.changedTouches[0].screenX;
-        touchStartY = e.changedTouches[0].screenY;
-        isSwiping = true;
-    }, { passive: true });
-    
-    el.addEventListener('touchmove', function(e) {
-        if (!isSwiping) return;
-        var deltaX = e.changedTouches[0].screenX - touchStartX;
-        var deltaY = Math.abs(e.changedTouches[0].screenY - touchStartY);
-        
-        if (deltaX < -50 && deltaY < 30) {
-            isSwiping = false;
-            document.querySelectorAll('.reply-btn').forEach(function(b) { b.remove(); });
-            
-            var replyBtn = document.createElement('button');
-            replyBtn.className = 'reply-btn';
-            replyBtn.textContent = '↩️ Ответ';
-            replyBtn.style.cssText = 
-                'position:absolute;' +
-                'left:-70px;' +
-                'top:50%;' +
-                'transform:translateY(-50%);' +
-                'background:var(--accent);' +
-                'color:#fff;' +
-                'border:none;' +
-                'border-radius:8px;' +
-                'padding:4px 8px;' +
-                'font-size:9px;' +
-                'cursor:pointer;' +
-                'z-index:10;' +
-                'white-space:nowrap;' +
-                'font-family:Inter,sans-serif;';
-            
-            replyBtn.onclick = function(e) {
-                e.stopPropagation();
-                startReplyToMessage(msgId, msg.message_text, msg.file_path, msg.file_name);
-                this.remove();
-            };
-            
-            el.style.position = 'relative';
-            el.appendChild(replyBtn);
-            
-            setTimeout(function() {
-                if (replyBtn.parentNode) {
-                    replyBtn.remove();
-                }
-            }, 3000);
-        }
-    }, { passive: true });
-    
-    el.addEventListener('touchend', function() {
-        isSwiping = false;
-    }, { passive: true });
 }
 
 function lm(id,silent,callback){
@@ -1686,6 +1746,16 @@ function lm(id,silent,callback){
         (d.messages||[]).forEach(function(m){
             var con='',isSent=m.sender_id===U.id;
             if(!isSent)con+='<div class="msg-header"><div class="msg-avatar" onclick="event.stopPropagation();viewUserAvatars('+m.sender_id+',\''+m.username+'\')">'+av(m.avatar)+'</div><span class="msg-username">'+m.username+'</span></div>';
+            
+            if (m.reply_to) {
+                var replySender = m.reply_sender || 'Пользователь';
+                var replyText = m.reply_text || 'Сообщение';
+                if (replyText.length > 30) replyText = replyText.substring(0, 30) + '...';
+                con += '<div style="font-size:8px;color:var(--text-muted);margin-bottom:2px;padding:2px 6px;background:var(--accent-bg);border-radius:4px;border-left:2px solid var(--accent);">' +
+                       '↩️ Ответ для <strong>' + replySender + '</strong>: "' + replyText + '"' +
+                       '</div>';
+            }
+            
             if(m.forward_from){ con+='<div class="forward-badge">↪️ Переслано от '+m.forward_from_name+'</div>'; }
             
             if(m.file_path){
@@ -1704,9 +1774,19 @@ function lm(id,silent,callback){
                         con+='<img src="'+displaySrc+'" class="msg-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\')" loading="lazy">';
                     }
                 }else if(m.file_type&&m.file_type.startsWith('video/')){
-                    con+='<div class="msg-video-round-wrapper" onclick="event.stopPropagation();ol(\''+m.file_path+'\',\''+m.file_type+'\')"><video src="'+m.file_path+'" class="msg-video-round" preload="metadata" muted></video><div class="msg-video-play-badge">▶</div><div class="msg-video-duration-badge">Видео</div></div>';
+                    var videoSrc = m.file_path;
+                    if (videoSrc && !videoSrc.startsWith('http') && !videoSrc.startsWith('/')) {
+                        videoSrc = '/' + videoSrc;
+                    }
+                    con+='<div class="msg-video-round-wrapper" onclick="event.stopPropagation();openVideoFullscreen(\'' + videoSrc + '\',\'' + m.file_type + '\')">' +
+                           '<video src="' + videoSrc + '" class="msg-video-round" preload="metadata" muted playsinline></video>' +
+                           '<div class="msg-video-play-badge">▶</div>' +
+                           '<div class="msg-video-duration-badge">Видео</div>' +
+                           '</div>';
                 }else if(m.file_type&&m.file_type.startsWith('audio/')){
-                    con+='<div class="msg-audio-container"><button class="msg-audio-play" onclick="event.stopPropagation();playAudio(this,\''+m.file_path+'\')">▶</button><div class="msg-audio-wave" onclick="event.stopPropagation();playAudio(this.parentElement.querySelector(\'.msg-audio-play\'),\''+m.file_path+'\')"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div><span class="msg-audio-duration">0:00</span></div>';
+                    con+='<div class="msg-audio-container"><button class="msg-audio-play" onclick="event.stopPropagation();playAudio(this,\''+m.file_path+'\')">▶</button><div class="msg-audio-wave" onclick="event.stopPropagation();playAudio(this.parentElement.querySelector(\'.msg-audio-play\'),\''+m.file_path+'\')">' +
+                           '<div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>' +
+                           '</div><span class="msg-audio-duration">0:00</span></div>';
                 }else{
                     con+='<div class="file-box" onclick="window.open(\''+m.file_path+'\')"><span style="font-size:20px">'+fiIcon(m.file_name||'')+'</span><div><div>'+m.file_name+'</div><div style="font-size:9px;opacity:0.6">Скачать</div></div></div>';
                 }
@@ -1778,6 +1858,15 @@ function lm(id,silent,callback){
     });
 }
 
+function openVideoFullscreen(url, type) {
+    document.getElementById('lb').classList.add('active');
+    document.body.style.overflow = 'hidden';
+    document.getElementById('lbc').innerHTML = 
+        '<video controls autoplay playsinline style="max-width:95vw;max-height:90vh;border-radius:8px;background:#000;">' +
+        '<source src="'+url+'" type="'+(type || 'video/mp4')+'">' +
+        '</video>';
+}
+
 async function sendPastedFiles(chatId){
     if(!pastedFiles.length)return;
     var hP=false;for(var i=0;i<pastedFiles.length;i++){if(pastedFiles[i].type.startsWith('image/')){hP=true;break}}
@@ -1793,7 +1882,153 @@ async function sendPastedFiles(chatId){
     if(sb){sb.disabled=false;sb.textContent='Отпр.'}selfDestructMode=false;photoSendMode=null;hidePhotoSendOptions();lm(chatId);
 }
 
-// ===== ЗАПИСЬ АУДИО/ВИДЕО С ПРАВИЛЬНЫМИ РАЗРЕШЕНИЯМИ =====
+function playAudio(btn, url) {
+    if (currentAudio && currentAudio.src.includes(url) && !currentAudio.paused) {
+        currentAudio.pause();
+        if (currentAudioBtn) {
+            currentAudioBtn.textContent = '▶';
+            currentAudioBtn.classList.remove('playing');
+        }
+        return;
+    }
+    
+    if (currentAudio) {
+        currentAudio.pause();
+        if (currentAudioBtn) {
+            currentAudioBtn.textContent = '▶';
+            currentAudioBtn.classList.remove('playing');
+        }
+    }
+    
+    var audio = new Audio(url);
+    var durationEl = btn.parentElement.querySelector('.msg-audio-duration');
+    var waveBars = btn.parentElement.querySelectorAll('.bar');
+    
+    audio.preload = 'metadata';
+    
+    audio.onloadedmetadata = function() {
+        if (durationEl) {
+            var duration = audio.duration;
+            if (!isNaN(duration) && isFinite(duration) && duration > 0) {
+                durationEl.textContent = formatDuration(duration);
+            } else {
+                setTimeout(function() {
+                    if (durationEl && !isNaN(audio.duration) && isFinite(audio.duration) && audio.duration > 0) {
+                        durationEl.textContent = formatDuration(audio.duration);
+                    }
+                }, 300);
+            }
+        }
+    };
+    
+    if (audio.readyState >= 1) {
+        if (durationEl) {
+            var duration = audio.duration;
+            if (!isNaN(duration) && isFinite(duration) && duration > 0) {
+                durationEl.textContent = formatDuration(duration);
+            }
+        }
+    }
+    
+    audio.ontimeupdate = function() {
+        if (durationEl) {
+            var current = audio.currentTime;
+            if (!isNaN(current) && isFinite(current)) {
+                var remaining = audio.duration - current;
+                if (!isNaN(remaining) && isFinite(remaining) && remaining > 0) {
+                    durationEl.textContent = formatDuration(remaining);
+                }
+            }
+        }
+        
+        if (waveBars && waveBars.length > 0) {
+            var progress = audio.currentTime / audio.duration;
+            if (!isNaN(progress) && isFinite(progress)) {
+                var index = Math.floor(progress * waveBars.length);
+                waveBars.forEach(function(bar, i) {
+                    var height = 20 + Math.random() * 80;
+                    if (i > index) {
+                        height = 10 + Math.random() * 20;
+                    }
+                    bar.style.height = height + '%';
+                });
+            }
+        }
+    };
+    
+    audio.onplay = function() {
+        btn.textContent = '⏸';
+        btn.classList.add('playing');
+        
+        if (waveBars) {
+            var interval = setInterval(function() {
+                if (audio.paused) {
+                    clearInterval(interval);
+                    return;
+                }
+                waveBars.forEach(function(bar) {
+                    var height = 15 + Math.random() * 85;
+                    bar.style.height = height + '%';
+                });
+            }, 200);
+            audio._waveInterval = interval;
+        }
+    };
+    
+    audio.onpause = function() {
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+        if (audio._waveInterval) {
+            clearInterval(audio._waveInterval);
+            audio._waveInterval = null;
+        }
+    };
+    
+    audio.onended = function() {
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+        if (durationEl) {
+            var duration = audio.duration;
+            if (!isNaN(duration) && isFinite(duration) && duration > 0) {
+                durationEl.textContent = formatDuration(duration);
+            }
+        }
+        if (audio._waveInterval) {
+            clearInterval(audio._waveInterval);
+            audio._waveInterval = null;
+        }
+        var heights = [30, 60, 45, 90, 70, 35, 100, 55, 80, 40, 65, 50, 85, 30, 75];
+        waveBars.forEach(function(bar, i) {
+            bar.style.height = heights[i % heights.length] + '%';
+        });
+    };
+    
+    audio.onerror = function(e) {
+        console.error('Ошибка аудио:', e);
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+        if (durationEl) {
+            durationEl.textContent = '0:00';
+        }
+        if (audio._waveInterval) {
+            clearInterval(audio._waveInterval);
+            audio._waveInterval = null;
+        }
+    };
+    
+    audio.play().catch(function(err) {
+        console.error('Ошибка воспроизведения:', err);
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+        if (durationEl) {
+            durationEl.textContent = '0:00';
+        }
+    });
+    
+    currentAudio = audio;
+    currentAudioBtn = btn;
+}
+
 async function startRec(type) {
     try {
         var constraints = {
@@ -1907,65 +2142,45 @@ function stopRecording() {
     }
 }
 
-// ========== ВОСПРОИЗВЕДЕНИЕ АУДИО ==========
-function playAudio(btn, url) {
-    if (currentAudio && currentAudio.src.includes(url) && !currentAudio.paused) { currentAudio.pause(); if (currentAudioBtn) currentAudioBtn.textContent = '▶'; return; }
-    if (currentAudio) { currentAudio.pause(); if (currentAudioBtn) currentAudioBtn.textContent = '▶'; }
-    var audio = new Audio(url);
-    var durationEl = btn.parentElement.querySelector('.msg-audio-duration');
-    audio.preload = 'metadata';
-    audio.onloadedmetadata = function() {
-        if (durationEl) {
-            var duration = audio.duration;
-            if (!isNaN(duration) && isFinite(duration) && duration > 0) { durationEl.textContent = formatDuration(duration); }
-            else { setTimeout(function() { if (durationEl && !isNaN(audio.duration) && isFinite(audio.duration) && audio.duration > 0) { durationEl.textContent = formatDuration(audio.duration); } }, 500); }
-        }
-    };
-    if (audio.readyState >= 1) {
-        if (durationEl) { var duration = audio.duration; if (!isNaN(duration) && isFinite(duration) && duration > 0) { durationEl.textContent = formatDuration(duration); } }
-    }
-    audio.onplay = function() { btn.textContent = '⏸'; btn.classList.add('playing'); };
-    audio.onpause = function() { btn.textContent = '▶'; btn.classList.remove('playing'); };
-    audio.onended = function() { btn.textContent = '▶'; btn.classList.remove('playing'); };
-    audio.onerror = function(e) { console.error('Ошибка аудио:', e); btn.textContent = '▶'; btn.classList.remove('playing'); if (durationEl) { durationEl.textContent = '0:00'; } };
-    audio.play().catch(function(err) { console.error('Ошибка воспроизведения:', err); btn.textContent = '▶'; btn.classList.remove('playing'); });
-    currentAudio = audio;
-    currentAudioBtn = btn;
-}
-
 function sendFile(id,file){
     var fd=new FormData(); fd.append('file',file);
     api('/api/messages/'+id,{method:'POST',body:fd}).then(function(){ lm(id); }).catch(function(err){ console.error('Ошибка отправки файла:', err); alert('Ошибка отправки файла.'); });
 }
 
 function sm(id){
-    var inp=document.getElementById('mi');
-    var fi=document.getElementById('cf');
-    var text=inp?inp.value.trim():'';
-    var file=fi?fi.files[0]:null;
+    var inp = document.getElementById('mi');
+    var fi = document.getElementById('cf');
+    var text = inp ? inp.value.trim() : '';
+    var file = fi ? fi.files[0] : null;
     
-    if(!text&&!file)return;
+    if (!text && !file) return;
     
-    if(file&&file.type.startsWith('image/')&&!photoSendMode){
+    if (file && file.type.startsWith('image/') && !photoSendMode) {
         alert('Выберите режим отправки фото: 📷 Обычное или 🔥 Одноразовое');
         return;
     }
     
-    var fd=new FormData();
-    if(file){fd.append('file',file);if(selfDestructMode&&file.type.startsWith('image/')){fd.append('is_self_destruct','true')}}
-    if(text)fd.append('message_text',text);
+    var fd = new FormData();
+    if (file) {
+        fd.append('file', file);
+        if (selfDestructMode && file.type.startsWith('image/')) {
+            fd.append('is_self_destruct', 'true');
+        }
+    }
+    if (text) fd.append('message_text', text);
     
-    if(replyToMsg){
+    if (replyToMsg) {
         fd.append('reply_to', replyToMsg.id);
         fd.append('reply_text', replyToMsg.text || '');
+        fd.append('reply_sender', replyToMsg.sender || 'Пользователь');
         cancelReply();
     }
     
-    api('/api/messages/'+id,{method:'POST',body:fd}).then(function(){
-        if(inp)inp.value='';
-        if(fi)fi.value='';
-        selfDestructMode=false;
-        photoSendMode=null;
+    api('/api/messages/' + id, { method: 'POST', body: fd }).then(function() {
+        if (inp) inp.value = '';
+        if (fi) fi.value = '';
+        selfDestructMode = false;
+        photoSendMode = null;
         hidePhotoSendOptions();
         lm(id);
     });
