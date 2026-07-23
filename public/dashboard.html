@@ -460,6 +460,85 @@ body.chat-open #tc {
 .reaction-count{font-size:8px;opacity:0.7}
 .msg.sent .reaction-badge{background:rgba(255,255,255,0.12)}.msg.sent .reaction-badge:hover{background:rgba(255,255,255,0.2)}
 
+/* ===== КНОПКИ НАД СООБЩЕНИЕМ (Реакции + Ответ) ===== */
+.msg-actions {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.9);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  z-index: 20;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.msg-actions.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) scale(1);
+  pointer-events: all;
+}
+
+.msg-actions .action-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 12px;
+  font-size: 14px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+}
+
+.msg-actions .action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  transform: scale(1.1);
+}
+
+.msg-actions .action-btn.reply-btn {
+  color: var(--accent-light);
+}
+
+.msg-actions .action-btn.reply-btn:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.msg-actions .action-btn.reaction-btn {
+  color: var(--orange);
+}
+
+.msg-actions .action-btn.reaction-btn:hover {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+.msg-actions .action-btn .emoji-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.msg-actions .action-divider {
+  width: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
 .reaction-picker{
   display:none;
   position:fixed;
@@ -970,6 +1049,8 @@ body.chat-open #tc {
   .msg-actions-bar { padding: 6px 8px; gap: 4px; }
   .reply-indicator .reply-text { font-size: 10px; }
   .reply-indicator .reply-label { font-size: 9px; }
+  .msg-actions .action-btn { font-size: 12px; padding: 3px 5px; min-width: 24px; height: 24px; }
+  .msg-actions { top: -20px; padding: 2px 4px; }
 }
 </style>
 </head>
@@ -1757,25 +1838,153 @@ function forwardTo(fid,fname){
     nx();
 }
 
-// ========== РЕАКЦИИ ==========
-function toggleReactionPicker(msgEl,msgId){
-    if(activeReactionMsg===msgId){ closeReactionPicker(); return; }
-    closeReactionPicker();
-    activeReactionMsg=msgId;
-    var picker=document.createElement('div');
-    picker.className='reaction-picker active';
-    picker.id='reactionPicker';
-    var emojis=['👍','❤️','😂','😮','😢','💩','🔥','👏'];
-    emojis.forEach(function(e){ picker.innerHTML+='<button class="emoji-btn" onclick="event.stopPropagation();addReaction(\''+msgId+'\',\''+e+'\')">'+e+'</button>'; });
-    document.body.appendChild(picker);
-    clearTimeout(reactionTimeout);
-    reactionTimeout=setTimeout(function(){ closeReactionPicker(); },5000);
+// ========== РЕАКЦИИ (НОВАЯ ВЕРСИЯ С КНОПКАМИ) ==========
+function showMsgActions(el, msgId) {
+    // Удаляем старые меню
+    document.querySelectorAll('.msg-actions').forEach(function(m) { m.remove(); });
+    document.querySelectorAll('.msg').forEach(function(m) { m.classList.remove('has-actions'); });
+    
+    var msgData = cachedMessages[ct.id] || [];
+    var msg = null;
+    for (var i = 0; i < msgData.length; i++) {
+        if (msgData[i].id == msgId) {
+            msg = msgData[i];
+            break;
+        }
+    }
+    if (!msg) return;
+    
+    // Создаем контейнер с кнопками
+    var actions = document.createElement('div');
+    actions.className = 'msg-actions show';
+    
+    // Кнопка "Ответить"
+    var replyBtn = document.createElement('button');
+    replyBtn.className = 'action-btn reply-btn';
+    replyBtn.innerHTML = '↩️';
+    replyBtn.title = 'Ответить';
+    replyBtn.onclick = function(e) {
+        e.stopPropagation();
+        startReplyToMessage(msgId, msg.message_text, msg.file_path, msg.file_name);
+        actions.classList.remove('show');
+        setTimeout(function() { actions.remove(); }, 300);
+    };
+    actions.appendChild(replyBtn);
+    
+    // Разделитель
+    var divider = document.createElement('div');
+    divider.className = 'action-divider';
+    actions.appendChild(divider);
+    
+    // Кнопка "Реакция" (открывает панель реакций)
+    var reactionBtn = document.createElement('button');
+    reactionBtn.className = 'action-btn reaction-btn';
+    reactionBtn.innerHTML = '😊';
+    reactionBtn.title = 'Выбрать реакцию';
+    reactionBtn.onclick = function(e) {
+        e.stopPropagation();
+        actions.classList.remove('show');
+        setTimeout(function() { actions.remove(); }, 300);
+        // Открываем панель реакций
+        toggleReactionPicker(el, msgId);
+    };
+    actions.appendChild(reactionBtn);
+    
+    el.style.position = 'relative';
+    el.appendChild(actions);
+    el.classList.add('has-actions');
+    
+    // Скрываем при клике вне
+    setTimeout(function() {
+        document.addEventListener('click', function closeActions(e) {
+            if (!e.target.closest('.msg-actions') && !e.target.closest('.msg')) {
+                var act = document.querySelector('.msg-actions');
+                if (act) {
+                    act.classList.remove('show');
+                    setTimeout(function() { act.remove(); }, 300);
+                }
+                document.removeEventListener('click', closeActions);
+            }
+        });
+    }, 100);
+    
+    // Автоматически скрываем через 5 секунд
+    setTimeout(function() {
+        if (actions.parentNode) {
+            actions.classList.remove('show');
+            setTimeout(function() { actions.remove(); }, 300);
+        }
+    }, 5000);
 }
 
-function closeReactionPicker(){ var p=document.getElementById('reactionPicker'); if(p)p.remove(); activeReactionMsg=null; clearTimeout(reactionTimeout); }
+function toggleReactionPicker(msgEl, msgId) {
+    // Закрываем старый пикер
+    var oldPicker = document.getElementById('reactionPicker');
+    if (oldPicker) oldPicker.remove();
+    
+    // Проверяем, есть ли уже активный пикер для этого сообщения
+    if (activeReactionMsg === msgId) {
+        activeReactionMsg = null;
+        return;
+    }
+    
+    activeReactionMsg = msgId;
+    
+    var picker = document.createElement('div');
+    picker.className = 'reaction-picker active';
+    picker.id = 'reactionPicker';
+    
+    var emojis = ['👍', '❤️', '😂', '😮', '😢', '💩', '🔥', '👏'];
+    emojis.forEach(function(e) {
+        var btn = document.createElement('button');
+        btn.className = 'emoji-btn';
+        btn.textContent = e;
+        btn.onclick = function(ev) {
+            ev.stopPropagation();
+            addReaction(msgId, e);
+        };
+        picker.appendChild(btn);
+    });
+    
+    document.body.appendChild(picker);
+    
+    clearTimeout(reactionTimeout);
+    reactionTimeout = setTimeout(function() {
+        if (picker.parentNode) picker.remove();
+        activeReactionMsg = null;
+    }, 5000);
+    
+    // Закрываем при клике вне
+    setTimeout(function() {
+        document.addEventListener('click', function closePicker(e) {
+            if (!e.target.closest('.reaction-picker') && !e.target.closest('.msg')) {
+                if (picker.parentNode) picker.remove();
+                activeReactionMsg = null;
+                document.removeEventListener('click', closePicker);
+            }
+        });
+    }, 100);
+}
 
-function addReaction(msgId,reaction){
-    api('/api/messages/'+msgId+'/react',{ method:'POST', body:{reaction:reaction} }).then(function(r){return r.json()}).then(function(d){ closeReactionPicker(); lm(ct.id,true); }).catch(function(err){ console.error('Ошибка реакции:',err); closeReactionPicker(); lm(ct.id,true); });
+function closeReactionPicker() {
+    var p = document.getElementById('reactionPicker');
+    if (p) p.remove();
+    activeReactionMsg = null;
+    clearTimeout(reactionTimeout);
+}
+
+function addReaction(msgId, reaction) {
+    api('/api/messages/' + msgId + '/react', { method: 'POST', body: { reaction: reaction } })
+        .then(function(r) { return r.json() })
+        .then(function(d) {
+            closeReactionPicker();
+            lm(ct.id, true);
+        })
+        .catch(function(err) {
+            console.error('Ошибка реакции:', err);
+            closeReactionPicker();
+            lm(ct.id, true);
+        });
 }
 
 // ========== ЗАКРЕПЛЕНИЯ ==========
@@ -1851,7 +2060,6 @@ function navigateToMessage(msgId){
     if(msgEl){
         msgEl.scrollIntoView({behavior:'smooth',block:'center'});
         msgEl.classList.remove('highlight');
-        // Принудительно запускаем анимацию
         void msgEl.offsetWidth;
         msgEl.classList.add('highlight');
         setTimeout(function(){msgEl.classList.remove('highlight')},2000);
@@ -1910,116 +2118,39 @@ function cancelReply() {
     }
 }
 
-// ===== КНОПКА ОТВЕТА ПРИ КЛИКЕ НА СООБЩЕНИЕ =====
-function showReplyButton(el, msgId) {
-    var msgData = cachedMessages[ct.id] || [];
-    var msg = null;
-    for (var i = 0; i < msgData.length; i++) {
-        if (msgData[i].id == msgId) {
-            msg = msgData[i];
-            break;
-        }
-    }
-    if (!msg) return;
-    
-    // Удаляем старые кнопки
-    document.querySelectorAll('.reply-btn-context').forEach(function(b) { b.remove(); });
-    
-    // Проверяем, есть ли уже активный ответ на это сообщение
-    if (replyToMsg && replyToMsg.id == msgId) {
-        cancelReply();
-        return;
-    }
-    
-    var isSent = msg.sender_id === U.id;
-    var offset = isSent ? 'right:-65px;' : 'left:-65px;';
-    
-    var replyBtn = document.createElement('button');
-    replyBtn.className = 'reply-btn-context';
-    replyBtn.textContent = '↩️ Ответить';
-    replyBtn.style.cssText = 
-        'position:absolute;' +
-        'top:50%;' +
-        'transform:translateY(-50%);' +
-        offset +
-        'background:var(--accent);' +
-        'color:#fff;' +
-        'border:none;' +
-        'border-radius:8px;' +
-        'padding:4px 10px;' +
-        'font-size:9px;' +
-        'cursor:pointer;' +
-        'z-index:10;' +
-        'white-space:nowrap;' +
-        'font-family:Inter,sans-serif;' +
-        'animation:fadeIn 0.2s ease;' +
-        'box-shadow:0 2px 10px rgba(0,0,0,0.3);' +
-        'transition:all 0.2s;';
-    
-    replyBtn.onmouseenter = function() {
-        this.style.transform = 'translateY(-50%) scale(1.05)';
-        this.style.background = 'var(--accent-light)';
-    };
-    replyBtn.onmouseleave = function() {
-        this.style.transform = 'translateY(-50%) scale(1)';
-        this.style.background = 'var(--accent)';
-    };
-    
-    replyBtn.onclick = function(e) {
-        e.stopPropagation();
-        startReplyToMessage(msgId, msg.message_text, msg.file_path, msg.file_name);
-        this.remove();
-    };
-    
-    el.style.position = 'relative';
-    el.appendChild(replyBtn);
-    
-    // Автоматически скрываем через 5 секунд
-    setTimeout(function() {
-        if (replyBtn.parentNode) {
-            replyBtn.remove();
-        }
-    }, 5000);
-    
-    // Скрываем при клике вне кнопки
-    document.addEventListener('click', function closeReply(e) {
-        if (!e.target.closest('.reply-btn-context') && !e.target.closest('.msg')) {
-            if (replyBtn.parentNode) {
-                replyBtn.remove();
-            }
-            document.removeEventListener('click', closeReply);
-        }
-    });
-}
-
 function attachMsgEvents(el, msg) {
     var msgId = msg.id;
     var isSent = msg.sender_id === U.id;
     
+    // Одиночный клик - показывает кнопки (реакции + ответ)
     el.addEventListener('click', function(e) {
         e.stopPropagation();
         if (el.classList.contains('selected')) return;
-        toggleReactionPicker(el, msgId);
+        showMsgActions(el, msgId);
     });
     
+    // Двойной клик - выделение
     el.addEventListener('dblclick', function(e) {
         e.stopPropagation();
         toggleMessage(el, msgId, isSent);
     });
     
+    // Долгое нажатие - ответ
     var longPressTimer = null;
     el.addEventListener('touchstart', function(e) {
         longPressTimer = setTimeout(function() {
             if (navigator.vibrate) navigator.vibrate(20);
-            showReplyButton(el, msgId);
+            // Показываем кнопки
+            showMsgActions(el, msgId);
         }, 400);
     });
     el.addEventListener('touchend', function() { clearTimeout(longPressTimer); });
     el.addEventListener('touchmove', function() { clearTimeout(longPressTimer); });
     
+    // ПКМ - ответ
     el.addEventListener('contextmenu', function(e) {
         e.preventDefault();
-        showReplyButton(el, msgId);
+        startReplyToMessage(msgId, msg.message_text, msg.file_path, msg.file_name);
     });
 }
 
