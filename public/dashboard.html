@@ -1500,7 +1500,6 @@ function attachMsgEvents(el,msg){
     // ===== КЛИК ПО СООБЩЕНИЮ = РЕАКЦИИ =====
     el.addEventListener('click', function(e) {
         e.stopPropagation();
-        // Если выделено сообщение — не открываем реакции
         if (el.classList.contains('selected')) return;
         toggleReactionPicker(el, msgId);
     });
@@ -1536,15 +1535,19 @@ function lm(id,silent,callback){
             
             if(m.file_path){
                 if(m.file_type&&m.file_type.startsWith('image/')){
-                    // ===== ИСПРАВЛЕНО ДЛЯ CLOUDINARY =====
                     var imgSrc = m.file_path;
                     if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('/')) {
                         imgSrc = '/' + imgSrc;
                     }
                     if(m.is_self_destruct){
-                        con+='<div class="self-destruct-wrapper"><img src="'+imgSrc+'" class="msg-img self-destruct-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\',\''+m.id+'\',true)" loading="lazy" onerror="this.style.display=\'none\'; this.parentElement.innerHTML=\'<span style=\\"font-size:9px;color:var(--text-muted);\\">🔥 Файл удален</span>\'"><div class="self-destruct-badge">🔥 Одноразовое</div></div>';
+                        con+='<div class="self-destruct-wrapper"><img src="'+imgSrc+'" class="msg-img self-destruct-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\',\''+m.id+'\',true)" loading="lazy"><div class="self-destruct-badge">🔥 Одноразовое</div></div>';
                     } else {
-                        con+='<img src="'+imgSrc+'" class="msg-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\')" loading="lazy" onerror="this.style.display=\'none\'; this.outerHTML=\'<span style=\\"font-size:9px;color:var(--text-muted);\\">❌ Файл недоступен</span>\'">';
+                        // ===== ИСПРАВЛЕНО: УБРАН onerror, ДОБАВЛЕНЫ ПАРАМЕТРЫ ДЛЯ CLOUDINARY =====
+                        var displaySrc = imgSrc;
+                        if (imgSrc && imgSrc.includes('cloudinary.com')) {
+                            displaySrc = imgSrc.replace('/upload/', '/upload/w_400,h_400,c_limit,q_auto,f_auto/');
+                        }
+                        con+='<img src="'+displaySrc+'" class="msg-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\')" loading="lazy">';
                     }
                 }else if(m.file_type&&m.file_type.startsWith('video/')){
                     con+='<div class="msg-video-round-wrapper" onclick="event.stopPropagation();ol(\''+m.file_path+'\',\''+m.file_type+'\')"><video src="'+m.file_path+'" class="msg-video-round" preload="metadata" muted></video><div class="msg-video-play-badge">▶</div><div class="msg-video-duration-badge">Видео</div></div>';

@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-// ===== НАСТРОЙКА CLOUDINARY =====
+// ===== НАСТРОЙКА =====
 const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const API_KEY = process.env.CLOUDINARY_API_KEY;
 const API_SECRET = process.env.CLOUDINARY_API_SECRET;
@@ -22,9 +22,7 @@ if (IS_CONFIGURED) {
   console.warn('⚠️ Cloudinary НЕ настроен! Файлы будут сохраняться локально.');
 }
 
-// ===== ЗАГРУЗКА ФАЙЛА В CLOUDINARY =====
 async function uploadFile(fileBuffer, originalName, mimeType, folder = 'uploads') {
-  // Сохраняем локально на всякий случай
   const publicPath = path.join(__dirname, 'public', folder, originalName);
   const publicDir = path.dirname(publicPath);
   if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
@@ -36,10 +34,15 @@ async function uploadFile(fileBuffer, originalName, mimeType, folder = 'uploads'
   }
 
   try {
-    // Определяем тип ресурса
     const resourceType = mimeType && mimeType.startsWith('video/') ? 'video' : 'image';
     
-    // Загружаем в Cloudinary
+    let transformation = [];
+    if (folder === 'avatars') {
+      transformation = [
+        { width: 200, height: 200, crop: 'fill', gravity: 'face' }
+      ];
+    }
+
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
@@ -48,6 +51,9 @@ async function uploadFile(fileBuffer, originalName, mimeType, folder = 'uploads'
           use_filename: true,
           unique_filename: true,
           public_id: crypto.randomUUID() + '_' + path.parse(originalName).name,
+          transformation: transformation,
+          quality: 'auto',
+          fetch_format: 'auto',
         },
         (error, result) => {
           if (error) reject(error);
@@ -60,7 +66,6 @@ async function uploadFile(fileBuffer, originalName, mimeType, folder = 'uploads'
     console.log(`✅ Файл загружен в Cloudinary: ${result.public_id}`);
     console.log(`📎 URL: ${result.secure_url}`);
 
-    // Удаляем локальный файл
     if (fs.existsSync(publicPath)) {
       fs.unlinkSync(publicPath);
       console.log(`🗑️ Локальный файл удален (загружен в Cloudinary)`);
@@ -75,11 +80,9 @@ async function uploadFile(fileBuffer, originalName, mimeType, folder = 'uploads'
   }
 }
 
-// ===== УДАЛЕНИЕ ФАЙЛА ИЗ CLOUDINARY =====
 async function deleteFile(fileUrl) {
   if (!fileUrl) return;
   
-  // Если локальный файл
   if (!fileUrl.startsWith('http')) {
     const localPath = path.join(__dirname, 'public', fileUrl);
     if (fs.existsSync(localPath)) {
@@ -92,7 +95,6 @@ async function deleteFile(fileUrl) {
   if (!IS_CONFIGURED) return;
 
   try {
-    // Извлекаем public_id из URL
     const url = new URL(fileUrl);
     const pathParts = url.pathname.split('/');
     const publicId = pathParts.slice(pathParts.indexOf('upload') + 2).join('/');
@@ -105,7 +107,6 @@ async function deleteFile(fileUrl) {
   }
 }
 
-// ===== ПОЛУЧЕНИЕ ИНФОРМАЦИИ О ФАЙЛЕ =====
 async function getFileInfo(publicId) {
   if (!IS_CONFIGURED) return null;
   try {

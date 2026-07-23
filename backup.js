@@ -16,7 +16,6 @@ class DatabaseBackup {
     console.log('📁 Папка для бэкапов создана');
   }
 
-  // ===== НОВОЕ: СКАЧИВАНИЕ БЭКАПА С GITHUB ЧЕРЕЗ API =====
   async downloadBackupFromGitHub() {
     const repo = 'vandar28/vero-messenger';
     const url = `https://api.github.com/repos/${repo}/contents/backups/latest.sqlite.gz`;
@@ -31,21 +30,18 @@ class DatabaseBackup {
         }
       };
       
-      // Если есть токен GitHub, используем его
       const token = process.env.GITHUB_TOKEN || '';
       if (token) {
         options.headers['Authorization'] = `token ${token}`;
       }
       
       https.get(url, options, (response) => {
-        // Если файл не найден
         if (response.statusCode === 404) {
           console.log('ℹ️ Бэкап не найден на GitHub');
           resolve(null);
           return;
         }
         
-        // Если ошибка
         if (response.statusCode !== 200) {
           console.log(`⚠️ Ошибка GitHub API: ${response.statusCode}`);
           resolve(null);
@@ -57,7 +53,6 @@ class DatabaseBackup {
         response.on('end', () => {
           try {
             const json = JSON.parse(data);
-            // Декодируем base64
             const buffer = Buffer.from(json.content, 'base64');
             console.log(`✅ Бэкап скачан с GitHub! Размер: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
             resolve(buffer);
@@ -73,7 +68,6 @@ class DatabaseBackup {
     });
   }
 
-  // ===== НОВОЕ: ВОССТАНОВЛЕНИЕ ИЗ GITHUB =====
   async restoreFromGitHub() {
     console.log('🔄 Проверка бэкапов в GitHub...');
     
@@ -84,16 +78,13 @@ class DatabaseBackup {
         return this.restoreLatestBackup();
       }
       
-      // Проверяем что данные не пустые
       if (data.length < 100) {
         console.log('⚠️ Бэкап слишком маленький, возможно пустой');
         return this.restoreLatestBackup();
       }
       
-      // Распаковываем
       const decompressed = zlib.gunzipSync(data);
       
-      // Проверяем что распакованные данные валидны (SQLite заголовок)
       const header = decompressed.slice(0, 16).toString('hex');
       if (!header.startsWith('53514c69746520666f726d6174')) {
         console.log('⚠️ Бэкап поврежден (не SQLite), пробуем локальный...');
@@ -118,7 +109,6 @@ class DatabaseBackup {
       return null;
     }
 
-    // Проверяем что БД не пустая
     const stats = fs.statSync(this.dbPath);
     if (stats.size < 100) {
       console.log('⚠️ БД слишком маленькая, пропускаем бэкап');
@@ -137,7 +127,6 @@ class DatabaseBackup {
       const compressed = zlib.gzipSync(data, { level: 9 });
       fs.writeFileSync(backupPath, compressed);
       
-      // Копируем как latest.sqlite.gz
       const latestPath = path.join(this.backupDir, 'latest.sqlite.gz');
       fs.copyFileSync(backupPath, latestPath);
       
@@ -203,7 +192,6 @@ class DatabaseBackup {
       const compressed = fs.readFileSync(backupPath);
       const data = zlib.gunzipSync(compressed);
       
-      // Проверяем что это SQLite
       const header = data.slice(0, 16).toString('hex');
       if (!header.startsWith('53514c69746520666f726d6174')) {
         console.log('⚠️ Локальный бэкап поврежден');
@@ -237,10 +225,10 @@ class DatabaseBackup {
 
 const backup = new DatabaseBackup();
 
-// Бэкап каждые 10 минут
+// ===== БЭКАП КАЖДЫЕ 7 МИНУТ =====
 setInterval(() => {
   backup.fullBackup();
-}, 10 * 60 * 1000);
+}, 7 * 60 * 1000);
 
 // Бэкап при выходе
 process.on('SIGINT', () => {
