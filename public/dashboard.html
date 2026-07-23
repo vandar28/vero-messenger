@@ -310,6 +310,28 @@ body.chat-open #tc {
 .msg.sent.search-highlight { background: var(--orange-bg) !important; }
 .msg.sent.search-current { background: var(--orange) !important; }
 
+/* Подсветка при навигации к сообщению */
+.msg.highlight {
+  animation: highlightAnim 1.5s ease-out;
+  z-index: 10;
+}
+
+@keyframes highlightAnim {
+  0% { 
+    box-shadow: 0 0 0 4px var(--accent-light);
+    background: var(--selected-bg);
+    transform: scale(1.03);
+  }
+  50% {
+    transform: scale(1.01);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background: transparent;
+    transform: scale(1);
+  }
+}
+
 .self-destruct-img{
   filter: blur(50px) brightness(0.5);
   transition: none;
@@ -422,8 +444,6 @@ body.chat-open #tc {
   pointer-events:none;
 }
 
-.msg.highlight{animation:highlightAnim 1.5s ease-out}
-@keyframes highlightAnim{0%{box-shadow:0 0 0 4px var(--accent-light);background:var(--selected-bg)}100%{box-shadow:0 0 0 0 transparent;background:transparent}}
 .msg .msg-header{display:flex;align-items:center;gap:4px;margin-bottom:1px}
 .msg .msg-avatar{width:16px;height:16px;border-radius:50%;overflow:hidden;flex-shrink:0;cursor:pointer}
 .msg .msg-avatar img{width:100%;height:100%;object-fit:cover}
@@ -662,6 +682,116 @@ body.chat-open #tc {
 .msg .file-box{background:rgba(255,255,255,0.06);padding:5px 7px;border-radius:5px;margin:2px 0;cursor:pointer;display:flex;align-items:center;gap:5px;transition:0.2s;font-size:9px}
 .msg .file-box:hover{background:rgba(255,255,255,0.12)}
 
+/* ========== ОТВЕТ НА СООБЩЕНИЕ (КАК В TELEGRAM) ========== */
+.reply-indicator {
+  display: none;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--accent-bg);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  margin-bottom: 4px;
+  margin-top: 4px;
+  flex-shrink: 0;
+  animation: slideDown 0.2s ease;
+}
+
+.reply-indicator.active {
+  display: flex;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reply-indicator .reply-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.reply-indicator .reply-label {
+  font-size: 10px;
+  color: var(--accent-light);
+  font-weight: 600;
+}
+
+.reply-indicator .reply-label .reply-username {
+  color: var(--accent-light);
+}
+
+.reply-indicator .reply-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+
+.reply-indicator .reply-close {
+  background: var(--red-bg);
+  border: none;
+  color: var(--red);
+  cursor: pointer;
+  font-size: 16px;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.reply-indicator .reply-close:hover {
+  background: var(--red);
+  color: #fff;
+  transform: scale(1.1);
+}
+
+/* Ответ в сообщении */
+.msg .reply-preview {
+  font-size: 8px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+  padding: 2px 6px;
+  background: var(--accent-bg);
+  border-radius: 4px;
+  border-left: 2px solid var(--accent);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.msg .reply-preview:hover {
+  background: var(--selected-bg);
+  border-color: var(--accent-light);
+}
+
+.msg .reply-preview .reply-preview-icon {
+  font-size: 10px;
+}
+
+.msg .reply-preview .reply-preview-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.msg .reply-preview .reply-preview-username {
+  color: var(--accent-light);
+  font-weight: 600;
+}
+
 .chat-input-area{display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--border);flex-shrink:0}
 .chat-input-area input[type="text"]{flex:1;min-width:80px;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;font-size:11px;transition:0.2s;font-family:'Inter',sans-serif}
 .chat-input-area input[type="text"]:focus{border-color:var(--accent)}
@@ -838,6 +968,8 @@ body.chat-open #tc {
   .btn { padding: 6px 9px; font-size: 10px; }
   .msg-actions-bar .btn { padding: 4px 7px; font-size: 9px; }
   .msg-actions-bar { padding: 6px 8px; gap: 4px; }
+  .reply-indicator .reply-text { font-size: 10px; }
+  .reply-indicator .reply-label { font-size: 9px; }
 }
 </style>
 </head>
@@ -1146,7 +1278,7 @@ function closeChatFullscreen(){
     document.getElementById('tc').style.display='';
     replyToMsg=null;
     var ri=document.getElementById('replyIndicator');
-    if(ri)ri.style.display='none';
+    if(ri)ri.classList.remove('active');
 }
 
 // ========== АДМИН-ПАНЕЛЬ ==========
@@ -1313,7 +1445,7 @@ function lcl(){
 // ========== ОТКРЫТИЕ ЧАТА ==========
 function oc(id,name,avatar){
     if(ti){clearInterval(ti);ti=null}pastedFiles=[];selectedMessages={};ct={id:id,name:name,avatar:avatar};cachedMessages={};selfDestructMode=false;photoSendMode=null;searchResults=[];searchIndex=0;
-    replyToMsg = null;
+    replyToMsg=null;
     
     document.getElementById('tc').style.display='none';
     document.body.classList.add('chat-open');
@@ -1336,7 +1468,13 @@ function oc(id,name,avatar){
     '<div class="chat-search-bar" id="chatSearchBar"><input type="text" id="searchInput" placeholder="Поиск сообщений..." oninput="doSearch()"><span class="search-count" id="searchCount"></span><div class="search-nav"><button onclick="prevSearch()">▲</button><button onclick="nextSearch()">▼</button><button onclick="closeSearch()">✕</button></div></div>'+
     '<div class="msg-actions-bar" id="msgActions"><span id="selectedCount" style="font-size:10px;color:var(--accent-light);font-weight:600">0</span> выделено <button class="btn btn-red" onclick="deleteSelected(\'me\')">🗑️ Удалить у себя</button><button class="btn btn-red" onclick="deleteSelected(\'all\')">🗑️ Удалить у всех</button><button class="btn btn-gray" onclick="forwardSelected()">📨 Переслать</button><button class="btn btn-gray" onclick="pinSelected(false)">📌 Закрепить для всех</button><button class="btn btn-gray" onclick="pinSelected(true)">🔒 Закрепить только себе</button><button class="btn btn-gray" onclick="unpinSelected()">📌 Открепить</button><button class="btn btn-gray" onclick="clearSelection()">✕ Снять выделение</button></div>'+
     '<div class="chat-container"><div class="chat-messages" id="cm"><div class="empty">Загрузка...</div></div>'+
-    '<div id="replyIndicator" style="display:none;justify-content:space-between;align-items:center;padding:6px 12px;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:6px;margin-bottom:4px;font-size:10px;color:var(--text-secondary);"></div>'+
+    '<div class="reply-indicator" id="replyIndicator">'+
+    '  <div class="reply-content">'+
+    '    <div class="reply-label">↩️ Ответ для <span class="reply-username"></span></div>'+
+    '    <div class="reply-text"></div>'+
+    '  </div>'+
+    '  <button class="reply-close" onclick="cancelReply()">✕</button>'+
+    '</div>'+
     '<div class="paste-preview" id="pastePreview"></div>'+
     '<div class="photo-send-options" id="photoSendOptions"><span style="font-size:9px;color:var(--text-muted);margin-right:3px">Режим фото:</span><button class="photo-send-option normal" id="photoNormalBtn" onclick="selectPhotoMode(\'normal\')">📷 Обычное</button><button class="photo-send-option destruct" id="photoDestructBtn" onclick="selectPhotoMode(\'destruct\')">🔥 Одноразовое</button></div>'+
     '<div class="recording-bar" id="recBar">⏺️ Запись... <span id="recTime">0:00</span> <button class="btn" onclick="stopRecording()" style="background:#fff;color:var(--red);margin-left:6px;padding:4px 10px;font-size:10px">Стоп</button></div>'+
@@ -1710,10 +1848,24 @@ function unpinSingle(msgId,pinType){
 function navigateToMessage(msgId){
     if(!ct)return;
     var msgEl=document.querySelector('.msg[data-msg-id="'+msgId+'"]');
-    if(msgEl){ msgEl.scrollIntoView({behavior:'smooth',block:'center'}); msgEl.classList.add('highlight'); setTimeout(function(){msgEl.classList.remove('highlight')},2000); return; }
+    if(msgEl){
+        msgEl.scrollIntoView({behavior:'smooth',block:'center'});
+        msgEl.classList.remove('highlight');
+        // Принудительно запускаем анимацию
+        void msgEl.offsetWidth;
+        msgEl.classList.add('highlight');
+        setTimeout(function(){msgEl.classList.remove('highlight')},2000);
+        return;
+    }
     lm(ct.id,false,function(){
         var el=document.querySelector('.msg[data-msg-id="'+msgId+'"]');
-        if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.classList.add('highlight'); setTimeout(function(){el.classList.remove('highlight')},2000); }
+        if(el){
+            el.scrollIntoView({behavior:'smooth',block:'center'});
+            el.classList.remove('highlight');
+            void el.offsetWidth;
+            el.classList.add('highlight');
+            setTimeout(function(){el.classList.remove('highlight')},2000);
+        }
     });
 }
 
@@ -1737,22 +1889,13 @@ function startReplyToMessage(msgId, messageText, filePath, fileName) {
     var replyIndicator = document.getElementById('replyIndicator');
     if (replyIndicator) {
         var replyText = replyToMsg.text || 'Сообщение';
-        if (replyText.length > 40) replyText = replyText.substring(0, 40) + '...';
+        if (replyText.length > 50) replyText = replyText.substring(0, 50) + '...';
         
         var senderName = replyToMsg.sender || 'Пользователь';
         
-        replyIndicator.innerHTML = 
-            '<div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;">' +
-            '<span style="font-size:10px;color:var(--accent-light);">↩️ Ответ для <strong>' + senderName + '</strong>:</span>' +
-            '<span style="font-size:10px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">"' + replyText + '"</span>' +
-            '</div>' +
-            '<button onclick="cancelReply()" style="background:var(--red-bg);border:none;color:var(--red);cursor:pointer;font-size:12px;border-radius:4px;padding:2px 8px;">✕</button>';
-        replyIndicator.style.display = 'flex';
-        replyIndicator.style.background = 'var(--accent-bg)';
-        replyIndicator.style.borderLeft = '3px solid var(--accent)';
-        replyIndicator.style.borderRadius = '6px';
-        replyIndicator.style.padding = '6px 12px';
-        replyIndicator.style.marginBottom = '4px';
+        replyIndicator.querySelector('.reply-username').textContent = senderName;
+        replyIndicator.querySelector('.reply-text').textContent = '"' + replyText + '"';
+        replyIndicator.classList.add('active');
     }
     
     var mi = document.getElementById('mi');
@@ -1763,10 +1906,11 @@ function cancelReply() {
     replyToMsg = null;
     var replyIndicator = document.getElementById('replyIndicator');
     if (replyIndicator) {
-        replyIndicator.style.display = 'none';
+        replyIndicator.classList.remove('active');
     }
 }
 
+// ===== КНОПКА ОТВЕТА ПРИ КЛИКЕ НА СООБЩЕНИЕ =====
 function showReplyButton(el, msgId) {
     var msgData = cachedMessages[ct.id] || [];
     var msg = null;
@@ -1778,10 +1922,17 @@ function showReplyButton(el, msgId) {
     }
     if (!msg) return;
     
+    // Удаляем старые кнопки
     document.querySelectorAll('.reply-btn-context').forEach(function(b) { b.remove(); });
     
+    // Проверяем, есть ли уже активный ответ на это сообщение
+    if (replyToMsg && replyToMsg.id == msgId) {
+        cancelReply();
+        return;
+    }
+    
     var isSent = msg.sender_id === U.id;
-    var offset = isSent ? 'right:-70px;' : 'left:-70px;';
+    var offset = isSent ? 'right:-65px;' : 'left:-65px;';
     
     var replyBtn = document.createElement('button');
     replyBtn.className = 'reply-btn-context';
@@ -1802,7 +1953,17 @@ function showReplyButton(el, msgId) {
         'white-space:nowrap;' +
         'font-family:Inter,sans-serif;' +
         'animation:fadeIn 0.2s ease;' +
-        'box-shadow:0 2px 10px rgba(0,0,0,0.3);';
+        'box-shadow:0 2px 10px rgba(0,0,0,0.3);' +
+        'transition:all 0.2s;';
+    
+    replyBtn.onmouseenter = function() {
+        this.style.transform = 'translateY(-50%) scale(1.05)';
+        this.style.background = 'var(--accent-light)';
+    };
+    replyBtn.onmouseleave = function() {
+        this.style.transform = 'translateY(-50%) scale(1)';
+        this.style.background = 'var(--accent)';
+    };
     
     replyBtn.onclick = function(e) {
         e.stopPropagation();
@@ -1813,12 +1974,14 @@ function showReplyButton(el, msgId) {
     el.style.position = 'relative';
     el.appendChild(replyBtn);
     
+    // Автоматически скрываем через 5 секунд
     setTimeout(function() {
         if (replyBtn.parentNode) {
             replyBtn.remove();
         }
     }, 5000);
     
+    // Скрываем при клике вне кнопки
     document.addEventListener('click', function closeReply(e) {
         if (!e.target.closest('.reply-btn-context') && !e.target.closest('.msg')) {
             if (replyBtn.parentNode) {
@@ -1949,13 +2112,14 @@ function lm(id,silent,callback){
             var con='',isSent=m.sender_id===U.id;
             if(!isSent)con+='<div class="msg-header"><div class="msg-avatar" onclick="event.stopPropagation();viewUserAvatars('+m.sender_id+',\''+m.username+'\')">'+av(m.avatar)+'</div><span class="msg-username">'+m.username+'</span></div>';
             
-            // ===== ОТВЕТ НА СООБЩЕНИЕ =====
+            // ===== ОТВЕТ НА СООБЩЕНИЕ (ПРЕВЬЮ В СООБЩЕНИИ) =====
             if (m.reply_to) {
                 var replySender = m.reply_sender || 'Пользователь';
                 var replyText = m.reply_text || 'Сообщение';
-                if (replyText.length > 30) replyText = replyText.substring(0, 30) + '...';
-                con += '<div style="font-size:8px;color:var(--text-muted);margin-bottom:2px;padding:2px 6px;background:var(--accent-bg);border-radius:4px;border-left:2px solid var(--accent);cursor:pointer;" onclick="navigateToMessage(\'' + m.reply_to + '\')">' +
-                       '↩️ Ответ для <strong>' + replySender + '</strong>: "' + replyText + '"' +
+                if (replyText.length > 40) replyText = replyText.substring(0, 40) + '...';
+                con += '<div class="reply-preview" onclick="navigateToMessage(\'' + m.reply_to + '\')">' +
+                       '<span class="reply-preview-icon">↩️</span>' +
+                       '<span class="reply-preview-text"><span class="reply-preview-username">' + replySender + '</span>: ' + replyText + '</span>' +
                        '</div>';
             }
             
