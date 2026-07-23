@@ -47,7 +47,6 @@ const DB_PATH = 'database.sqlite';
           console.log('⚠️ БД повреждена!');
           needRestore = true;
         } else {
-          // Проверяем есть ли пользователи
           const str = data.toString('utf8', 0, Math.min(data.length, 5000));
           if (!str.includes('ad6@gmail.com') && !str.includes('users')) {
             console.log('⚠️ В БД нет пользователей!');
@@ -298,10 +297,13 @@ const avatarStorageMulter = multer.diskStorage({
   }
 });
 
+// ===== РАЗРЕШАЕМ ВСЕ ТИПЫ ФАЙЛОВ =====
 const upload = multer({ 
   storage: storageMulter, 
   limits: { fileSize: 500 * 1024 * 1024 }, 
-  fileFilter: function(req, file, cb) { cb(null, true); } 
+  fileFilter: function(req, file, cb) { 
+    cb(null, true); 
+  } 
 });
 
 const uploadAvatar = multer({ 
@@ -746,23 +748,32 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
         fs.unlinkSync(req.file.path);
       }
       
-      const fileBuffer = fs.readFileSync(localFilePath);
-      let cloudinaryUrl = null;
+      // ДЛЯ ВИДЕО И ИЗОБРАЖЕНИЙ - ЗАГРУЖАЕМ В CLOUDINARY
+      const isVideo = fileType && fileType.startsWith('video/');
+      const isImage = fileType && fileType.startsWith('image/');
       
-      try {
-        cloudinaryUrl = await storage.uploadFile(fileBuffer, fileName, fileType, 'uploads');
-      } catch (uploadError) {
-        console.error('❌ Ошибка загрузки в Cloudinary:', uploadError.message);
-        cloudinaryUrl = null;
-      }
-      
-      if (cloudinaryUrl && cloudinaryUrl.startsWith('http')) {
-        if (fs.existsSync(localFilePath)) {
-          fs.unlinkSync(localFilePath);
-          console.log(`🗑️ Локальный файл удален (загружен в Cloudinary)`);
+      if (isVideo || isImage) {
+        try {
+          const fileBuffer = fs.readFileSync(localFilePath);
+          const cloudinaryUrl = await storage.uploadFile(fileBuffer, fileName, fileType, 'uploads');
+          
+          if (cloudinaryUrl && cloudinaryUrl.startsWith('http')) {
+            if (fs.existsSync(localFilePath)) {
+              fs.unlinkSync(localFilePath);
+              console.log(`🗑️ Локальный файл удален (загружен в Cloudinary)`);
+            }
+            filePath = cloudinaryUrl;
+          } else {
+            filePath = '/uploads/' + localFileName;
+            console.log(`📁 Файл оставлен локально: ${filePath}`);
+          }
+        } catch (uploadError) {
+          console.error('❌ Ошибка загрузки в Cloudinary:', uploadError.message);
+          filePath = '/uploads/' + localFileName;
+          console.log(`📁 Файл оставлен локально: ${filePath}`);
         }
-        filePath = cloudinaryUrl;
       } else {
+        // ДЛЯ ОСТАЛЬНЫХ ФАЙЛОВ - ОСТАВЛЯЕМ ЛОКАЛЬНО
         filePath = '/uploads/' + localFileName;
         console.log(`📁 Файл оставлен локально: ${filePath}`);
       }
@@ -779,7 +790,6 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
     
     const isSelfDestruct = req.body.is_self_destruct === 'true' || req.body.is_self_destruct === true ? 1 : 0;
     
-    // Ответ на сообщение
     const replyTo = req.body.reply_to || null;
     const replyText = req.body.reply_text || null;
     const replySender = req.body.reply_sender || null;
