@@ -529,8 +529,7 @@ body.chat-open #tc {
 .msg.sent .msg-audio-container { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
 .msg.received .msg-audio-wave .bar { background: var(--accent-light); }
 
-/* ========== ВИДЕО СООБЩЕНИЯ (КРУЖКИ) ========== */
-/* Стили для видео-кружков в сообщениях */
+/* ========== ВИДЕО-КРУЖКИ ========== */
 .video-circle {
   width: 180px;
   height: 180px;
@@ -1822,12 +1821,24 @@ function createVideoElement(videoData) {
     circle.className = 'video-circle';
     
     var video = document.createElement('video');
-    video.src = videoData.url || videoData.file_path || videoData;
+    
+    // Определяем URL видео
+    var videoUrl = videoData.url || videoData.file_path || videoData;
+    if (videoUrl && !videoUrl.startsWith('http') && !videoUrl.startsWith('/')) {
+        videoUrl = '/' + videoUrl;
+    }
+    video.src = videoUrl;
     video.muted = true;
     video.loop = false;
     video.playsInline = true;
     video.setAttribute('playsinline', '');
     video.preload = 'metadata';
+    
+    // Стили для видео
+    video.style.width = '100%';
+    video.style.height = '100%';
+    video.style.objectFit = 'cover';
+    video.style.borderRadius = '50%';
     
     // Автовоспроизведение при наведении
     circle.addEventListener('mouseenter', function() {
@@ -1838,7 +1849,7 @@ function createVideoElement(videoData) {
         video.pause();
     });
     
-    // Клик для воспроизведения
+    // Клик для воспроизведения/паузы
     circle.addEventListener('click', function(e) {
         e.stopPropagation();
         if (video.paused) {
@@ -1851,11 +1862,10 @@ function createVideoElement(videoData) {
     // Двойной клик для полноэкранного просмотра
     circle.addEventListener('dblclick', function(e) {
         e.stopPropagation();
-        var url = videoData.url || videoData.file_path || videoData;
-        openVideoFullscreen(url, videoData.file_type || 'video/mp4');
+        openVideoFullscreen(videoUrl, videoData.file_type || 'video/mp4');
     });
     
-    // Длительность
+    // Добавляем индикатор длительности
     video.addEventListener('loadedmetadata', function() {
         var duration = Math.round(video.duration);
         if (duration > 0 && !circle.querySelector('.duration')) {
@@ -1870,6 +1880,7 @@ function createVideoElement(videoData) {
     var overlay = document.createElement('div');
     overlay.className = 'play-overlay';
     overlay.innerHTML = '<svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>';
+    
     circle.appendChild(overlay);
     circle.appendChild(video);
     wrapper.appendChild(circle);
@@ -1927,16 +1938,10 @@ function lm(id,silent,callback){
                     var videoData = {
                         url: m.file_path,
                         file_path: m.file_path,
-                        file_type: m.file_type,
-                        duration: m.duration || 0
+                        file_type: m.file_type || 'video/mp4'
                     };
                     var videoEl = createVideoElement(videoData);
-                    // Оборачиваем видео в контейнер с классом для стилизации
-                    var videoWrapper = document.createElement('div');
-                    videoWrapper.style.display = 'inline-block';
-                    videoWrapper.appendChild(videoEl);
-                    // Добавляем в сообщение
-                    con += videoWrapper.innerHTML;
+                    con += videoEl.outerHTML;
                 }else if(m.file_type&&m.file_type.startsWith('audio/')){
                     con+='<div class="msg-audio-container"><button class="msg-audio-play" onclick="event.stopPropagation();playAudio(this,\''+m.file_path+'\')">▶</button><div class="msg-audio-wave" onclick="event.stopPropagation();playAudio(this.parentElement.querySelector(\'.msg-audio-play\'),\''+m.file_path+'\')">' +
                            '<div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>' +
@@ -1967,6 +1972,8 @@ function lm(id,silent,callback){
             h+='<div class="msg '+(isSent?'sent':'received')+'" data-msg-id="'+m.id+'">'+con+reacts+'<div class="time">'+new Date(m.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+statusIndicator+'</div></div>';
         });
         if(!h)h='<div class="empty">Нет сообщений</div>';c.innerHTML=h;
+        
+        // Привязываем события к элементам
         c.querySelectorAll('.msg').forEach(function(el){
             var mid=el.getAttribute('data-msg-id');
             var msg=(d.messages||[]).find(function(x){return x.id==mid});
@@ -1980,7 +1987,35 @@ function lm(id,silent,callback){
                     el.appendChild(checkmark);
                 }
             }
+            
+            // Привязываем события для видео-кружков
+            var videoCircle = el.querySelector('.video-circle');
+            if (videoCircle) {
+                var video = videoCircle.querySelector('video');
+                if (video) {
+                    videoCircle.addEventListener('mouseenter', function() {
+                        video.play().catch(function() {});
+                    });
+                    videoCircle.addEventListener('mouseleave', function() {
+                        video.pause();
+                    });
+                    videoCircle.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        if (video.paused) {
+                            video.play().catch(function() {});
+                        } else {
+                            video.pause();
+                        }
+                    });
+                    videoCircle.addEventListener('dblclick', function(e) {
+                        e.stopPropagation();
+                        var url = video.src;
+                        openVideoFullscreen(url, 'video/mp4');
+                    });
+                }
+            }
         });
+        
         if(bottom||!silent)c.scrollTop=c.scrollHeight;
         if(callback)callback();
         
