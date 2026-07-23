@@ -1113,9 +1113,11 @@ function lcl(){
 
 // ========== ОТКРЫТИЕ ЧАТА ==========
 var typingTimeout = null;
+var replyToMsg = null;
 
 function oc(id,name,avatar){
     if(ti){clearInterval(ti);ti=null}pastedFiles=[];selectedMessages={};ct={id:id,name:name,avatar:avatar};cachedMessages={};selfDestructMode=false;photoSendMode=null;searchResults=[];searchIndex=0;
+    replyToMsg = null;
     
     document.getElementById('tc').style.display='none';
     document.body.classList.add('chat-open');
@@ -1138,6 +1140,7 @@ function oc(id,name,avatar){
     '<div class="chat-search-bar" id="chatSearchBar"><input type="text" id="searchInput" placeholder="Поиск сообщений..." oninput="doSearch()"><span class="search-count" id="searchCount"></span><div class="search-nav"><button onclick="prevSearch()">▲</button><button onclick="nextSearch()">▼</button><button onclick="closeSearch()">✕</button></div></div>'+
     '<div class="msg-actions-bar" id="msgActions"><span id="selectedCount" style="font-size:10px;color:var(--accent-light);font-weight:600">0</span> выделено <button class="btn btn-red" onclick="deleteSelected(\'me\')">🗑️ Удалить у себя</button><button class="btn btn-red" onclick="deleteSelected(\'all\')">🗑️ Удалить у всех</button><button class="btn btn-gray" onclick="forwardSelected()">📨 Переслать</button><button class="btn btn-gray" onclick="pinSelected(false)">📌 Закрепить для всех</button><button class="btn btn-gray" onclick="pinSelected(true)">🔒 Закрепить только себе</button><button class="btn btn-gray" onclick="unpinSelected()">📌 Открепить</button><button class="btn btn-gray" onclick="clearSelection()">✕ Снять выделение</button></div>'+
     '<div class="chat-container"><div class="chat-messages" id="cm"><div class="empty">Загрузка...</div></div>'+
+    '<div id="replyIndicator" style="display:none;justify-content:space-between;align-items:center;padding:6px 12px;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:6px;margin-bottom:4px;font-size:10px;color:var(--text-secondary);"></div>'+
     '<div class="paste-preview" id="pastePreview"></div>'+
     '<div class="photo-send-options" id="photoSendOptions"><span style="font-size:9px;color:var(--text-muted);margin-right:3px">Режим фото:</span><button class="photo-send-option normal" id="photoNormalBtn" onclick="selectPhotoMode(\'normal\')">📷 Обычное</button><button class="photo-send-option destruct" id="photoDestructBtn" onclick="selectPhotoMode(\'destruct\')">🔥 Одноразовое</button></div>'+
     '<div class="recording-bar" id="recBar">⏺️ Запись... <span id="recTime">0:00</span> <button class="btn" onclick="stopRecording()" style="background:#fff;color:var(--red);margin-left:6px;padding:4px 10px;font-size:10px">Стоп</button></div>'+
@@ -1495,20 +1498,111 @@ function navigateToMessage(msgId){
     });
 }
 
-function attachMsgEvents(el,msg){
-    var msgId=msg.id,isSent=msg.sender_id===U.id;
-    // ===== КЛИК ПО СООБЩЕНИЮ = РЕАКЦИИ =====
+function startReplyToMessage(msgId, messageText, filePath, fileName) {
+    replyToMsg = {
+        id: msgId,
+        text: messageText || (fileName || 'Файл')
+    };
+    
+    var replyIndicator = document.getElementById('replyIndicator');
+    if (replyIndicator) {
+        var replyText = replyToMsg.text || 'Сообщение';
+        if (replyText.length > 50) replyText = replyText.substring(0, 50) + '...';
+        
+        replyIndicator.innerHTML = 
+            '<span>↩️ Ответ на: <strong>' + replyText + '</strong></span>' +
+            '<button onclick="cancelReply()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>';
+        replyIndicator.style.display = 'flex';
+    }
+    
+    var mi = document.getElementById('mi');
+    if (mi) mi.focus();
+}
+
+function cancelReply() {
+    replyToMsg = null;
+    var replyIndicator = document.getElementById('replyIndicator');
+    if (replyIndicator) {
+        replyIndicator.style.display = 'none';
+    }
+}
+
+function showReplyButton(el, msgId) {
+    var msgData = cachedMessages[ct.id] || [];
+    var msg = null;
+    for (var i = 0; i < msgData.length; i++) {
+        if (msgData[i].id == msgId) {
+            msg = msgData[i];
+            break;
+        }
+    }
+    if (!msg) return;
+    
+    document.querySelectorAll('.reply-btn-context').forEach(function(b) { b.remove(); });
+    
+    var replyBtn = document.createElement('button');
+    replyBtn.className = 'reply-btn-context';
+    replyBtn.textContent = '↩️ Ответить';
+    replyBtn.style.cssText = 
+        'position:fixed;' +
+        'bottom:80px;' +
+        'left:50%;' +
+        'transform:translateX(-50%);' +
+        'background:var(--accent);' +
+        'color:#fff;' +
+        'border:none;' +
+        'border-radius:12px;' +
+        'padding:10px 20px;' +
+        'font-size:13px;' +
+        'cursor:pointer;' +
+        'z-index:100;' +
+        'box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
+        'font-family:Inter,sans-serif;' +
+        'animation:fadeIn 0.2s ease;';
+    
+    replyBtn.onclick = function(e) {
+        e.stopPropagation();
+        startReplyToMessage(msgId, msg.message_text, msg.file_path, msg.file_name);
+        this.remove();
+    };
+    
+    document.body.appendChild(replyBtn);
+    
+    setTimeout(function() {
+        if (replyBtn.parentNode) {
+            replyBtn.remove();
+        }
+    }, 5000);
+    
+    document.addEventListener('click', function closeReply(e) {
+        if (!e.target.closest('.reply-btn-context') && !e.target.closest('.msg')) {
+            if (replyBtn.parentNode) {
+                replyBtn.remove();
+            }
+            document.removeEventListener('click', closeReply);
+        }
+    });
+}
+
+function attachMsgEvents(el, msg) {
+    var msgId = msg.id;
+    var isSent = msg.sender_id === U.id;
+    
+    // ===== КЛИК = РЕАКЦИИ =====
     el.addEventListener('click', function(e) {
         e.stopPropagation();
         if (el.classList.contains('selected')) return;
         toggleReactionPicker(el, msgId);
     });
+    
     // ===== ДВОЙНОЙ КЛИК = ВЫДЕЛЕНИЕ =====
     el.addEventListener('dblclick', function(e) {
         e.stopPropagation();
         toggleMessage(el, msgId, isSent);
     });
+    
     // ===== ДОЛГОЕ НАЖАТИЕ (телефон) =====
+    var longPressTimer = null;
     el.addEventListener('touchstart', function(e) {
         longPressTimer = setTimeout(function() {
             toggleMessage(el, msgId, isSent);
@@ -1516,11 +1610,72 @@ function attachMsgEvents(el,msg){
     });
     el.addEventListener('touchend', function() { clearTimeout(longPressTimer); });
     el.addEventListener('touchmove', function() { clearTimeout(longPressTimer); });
-    // ===== ПРАВЫЙ КЛИК (ПК) =====
+    
+    // ===== ПРАВЫЙ КЛИК (ПК) - ОТВЕТ/ВЫДЕЛЕНИЕ =====
     el.addEventListener('contextmenu', function(e) {
         e.preventDefault();
-        toggleMessage(el, msgId, isSent);
+        showReplyButton(el, msgId);
     });
+    
+    // ===== СВАЙП ВЛЕВО (ТЕЛЕФОН) =====
+    var touchStartX = 0;
+    var touchStartY = 0;
+    var isSwiping = false;
+    
+    el.addEventListener('touchstart', function(e) {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+        isSwiping = true;
+    }, { passive: true });
+    
+    el.addEventListener('touchmove', function(e) {
+        if (!isSwiping) return;
+        var deltaX = e.changedTouches[0].screenX - touchStartX;
+        var deltaY = Math.abs(e.changedTouches[0].screenY - touchStartY);
+        
+        if (deltaX < -50 && deltaY < 30) {
+            isSwiping = false;
+            document.querySelectorAll('.reply-btn').forEach(function(b) { b.remove(); });
+            
+            var replyBtn = document.createElement('button');
+            replyBtn.className = 'reply-btn';
+            replyBtn.textContent = '↩️ Ответ';
+            replyBtn.style.cssText = 
+                'position:absolute;' +
+                'left:-70px;' +
+                'top:50%;' +
+                'transform:translateY(-50%);' +
+                'background:var(--accent);' +
+                'color:#fff;' +
+                'border:none;' +
+                'border-radius:8px;' +
+                'padding:4px 8px;' +
+                'font-size:9px;' +
+                'cursor:pointer;' +
+                'z-index:10;' +
+                'white-space:nowrap;' +
+                'font-family:Inter,sans-serif;';
+            
+            replyBtn.onclick = function(e) {
+                e.stopPropagation();
+                startReplyToMessage(msgId, msg.message_text, msg.file_path, msg.file_name);
+                this.remove();
+            };
+            
+            el.style.position = 'relative';
+            el.appendChild(replyBtn);
+            
+            setTimeout(function() {
+                if (replyBtn.parentNode) {
+                    replyBtn.remove();
+                }
+            }, 3000);
+        }
+    }, { passive: true });
+    
+    el.addEventListener('touchend', function() {
+        isSwiping = false;
+    }, { passive: true });
 }
 
 function lm(id,silent,callback){
@@ -1542,7 +1697,6 @@ function lm(id,silent,callback){
                     if(m.is_self_destruct){
                         con+='<div class="self-destruct-wrapper"><img src="'+imgSrc+'" class="msg-img self-destruct-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\',\''+m.id+'\',true)" loading="lazy"><div class="self-destruct-badge">🔥 Одноразовое</div></div>';
                     } else {
-                        // ===== ИСПРАВЛЕНО: УБРАН onerror, ДОБАВЛЕНЫ ПАРАМЕТРЫ ДЛЯ CLOUDINARY =====
                         var displaySrc = imgSrc;
                         if (imgSrc && imgSrc.includes('cloudinary.com')) {
                             displaySrc = imgSrc.replace('/upload/', '/upload/w_400,h_400,c_limit,q_auto,f_auto/');
@@ -1596,7 +1750,6 @@ function lm(id,silent,callback){
         if(bottom||!silent)c.scrollTop=c.scrollHeight;
         if(callback)callback();
         
-        // ===== ОБНОВЛЕНИЕ СТАТУСА В ШАПКЕ И ИНДИКАТОРА ПЕЧАТАЕТ =====
         api('/api/user/status/' + id).then(function(r){return r.json()}).then(function(status){
             var statusEl = document.querySelector('.chat-status');
             if (statusEl) {
@@ -1640,45 +1793,111 @@ async function sendPastedFiles(chatId){
     if(sb){sb.disabled=false;sb.textContent='Отпр.'}selfDestructMode=false;photoSendMode=null;hidePhotoSendOptions();lm(chatId);
 }
 
-// ========== ЗАПИСЬ АУДИО ==========
+// ===== ЗАПИСЬ АУДИО/ВИДЕО С ПРАВИЛЬНЫМИ РАЗРЕШЕНИЯМИ =====
 async function startRec(type) {
     try {
         var constraints = {
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 48000, channelCount: 1 }
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                sampleRate: 48000,
+                channelCount: 1
+            }
         };
-        if (type === 'video') { constraints.video = { facingMode: 'user' }; }
+        
+        if (type === 'video') {
+            constraints.video = {
+                facingMode: 'user',
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            };
+        }
+        
         var stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
         var mimeType = 'audio/webm;codecs=opus';
         if (!MediaRecorder.isTypeSupported(mimeType)) { mimeType = 'audio/webm'; }
         if (!MediaRecorder.isTypeSupported(mimeType)) { mimeType = 'audio/ogg;codecs=opus'; }
-        mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType, audioBitsPerSecond: 128000 });
-        var chunks = []; var startTime = Date.now();
-        mediaRecorder.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
+        
+        if (type === 'video') {
+            var videoMime = 'video/webm;codecs=vp8,opus';
+            if (!MediaRecorder.isTypeSupported(videoMime)) {
+                videoMime = 'video/webm';
+            }
+            if (MediaRecorder.isTypeSupported(videoMime)) {
+                mimeType = videoMime;
+            }
+        }
+        
+        mediaRecorder = new MediaRecorder(stream, { 
+            mimeType: mimeType,
+            audioBitsPerSecond: 128000,
+            videoBitsPerSecond: 2500000
+        });
+        
+        var chunks = [];
+        var startTime = Date.now();
+        
+        mediaRecorder.ondataavailable = function(e) {
+            if (e.data.size > 0) chunks.push(e.data);
+        };
+        
         mediaRecorder.onstop = function() {
             stream.getTracks().forEach(function(t) { t.stop(); });
+            
             var blob = new Blob(chunks, { type: mimeType });
-            if (blob.size < 1000) { alert('Запись слишком короткая или пустая.'); document.getElementById('recBar').style.display = 'none'; document.getElementById('micBtn').classList.remove('btn-rec'); document.getElementById('vidBtn').classList.remove('btn-rec'); return; }
-            var fileName = (type === 'audio' ? 'voice_' : 'video_') + Date.now() + '.webm';
+            
+            if (blob.size < 1000) {
+                alert('Запись слишком короткая или пустая.');
+                document.getElementById('recBar').style.display = 'none';
+                document.getElementById('micBtn').classList.remove('btn-rec');
+                document.getElementById('vidBtn').classList.remove('btn-rec');
+                return;
+            }
+            
+            var ext = (type === 'video' && mimeType.includes('video')) ? 'webm' : 'webm';
+            var fileName = (type === 'audio' ? 'voice_' : 'video_') + Date.now() + '.' + ext;
             var file = new File([blob], fileName, { type: mimeType });
+            
             sendFile(ct.id, file);
             document.getElementById('recBar').style.display = 'none';
             document.getElementById('micBtn').classList.remove('btn-rec');
             document.getElementById('vidBtn').classList.remove('btn-rec');
         };
+        
         mediaRecorder.start(100);
         document.getElementById('recBar').style.display = 'block';
         document.getElementById('recBar').innerHTML = '⏺️ Запись... <span id="recTime">0:00</span> <button class="btn" onclick="stopRecording()" style="background:#fff;color:var(--red);margin-left:6px;padding:4px 10px;font-size:10px">Стоп</button>';
+        
         var recTimer = setInterval(function() {
             var elapsed = Math.floor((Date.now() - startTime) / 1000);
             var minutes = Math.floor(elapsed / 60);
             var seconds = elapsed % 60;
             var timeEl = document.getElementById('recTime');
-            if (timeEl) { timeEl.textContent = minutes + ':' + (seconds < 10 ? '0' : '') + seconds; }
+            if (timeEl) {
+                timeEl.textContent = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+            }
         }, 1000);
+        
         mediaRecorder._timer = recTimer;
-        if (type === 'audio') document.getElementById('micBtn').classList.add('btn-rec');
-        else document.getElementById('vidBtn').classList.add('btn-rec');
-    } catch(e) { console.error('Ошибка доступа к микрофону:', e); alert('Нет доступа к микрофону.'); }
+        
+        if (type === 'audio') {
+            document.getElementById('micBtn').classList.add('btn-rec');
+            document.getElementById('vidBtn').classList.remove('btn-rec');
+        } else {
+            document.getElementById('vidBtn').classList.add('btn-rec');
+            document.getElementById('micBtn').classList.remove('btn-rec');
+        }
+        
+    } catch(e) {
+        console.error('Ошибка доступа к микрофону/камере:', e);
+        if (type === 'video') {
+            alert('Нет доступа к камере и микрофону. Разрешите доступ в настройках браузера.');
+        } else {
+            alert('Нет доступа к микрофону. Разрешите доступ в настройках браузера.');
+        }
+    }
 }
 
 function stopRecording() {
@@ -1720,16 +1939,35 @@ function sendFile(id,file){
 }
 
 function sm(id){
-    var inp=document.getElementById('mi'),fi=document.getElementById('cf');
-    var text=inp?inp.value.trim():'',file=fi?fi.files[0]:null;
+    var inp=document.getElementById('mi');
+    var fi=document.getElementById('cf');
+    var text=inp?inp.value.trim():'';
+    var file=fi?fi.files[0]:null;
+    
     if(!text&&!file)return;
-    if(file&&file.type.startsWith('image/')&&!photoSendMode){alert('Выберите режим отправки фото: 📷 Обычное или 🔥 Одноразовое');return}
+    
+    if(file&&file.type.startsWith('image/')&&!photoSendMode){
+        alert('Выберите режим отправки фото: 📷 Обычное или 🔥 Одноразовое');
+        return;
+    }
+    
     var fd=new FormData();
     if(file){fd.append('file',file);if(selfDestructMode&&file.type.startsWith('image/')){fd.append('is_self_destruct','true')}}
     if(text)fd.append('message_text',text);
+    
+    if(replyToMsg){
+        fd.append('reply_to', replyToMsg.id);
+        fd.append('reply_text', replyToMsg.text || '');
+        cancelReply();
+    }
+    
     api('/api/messages/'+id,{method:'POST',body:fd}).then(function(){
-        if(inp)inp.value='';if(fi)fi.value='';
-        selfDestructMode=false;photoSendMode=null;hidePhotoSendOptions();lm(id);
+        if(inp)inp.value='';
+        if(fi)fi.value='';
+        selfDestructMode=false;
+        photoSendMode=null;
+        hidePhotoSendOptions();
+        lm(id);
     });
 }
 

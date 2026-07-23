@@ -618,7 +618,6 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
       fileName = req.file.originalname;
       fileType = req.file.mimetype;
       
-      // ===== 1. СОХРАНЯЕМ ФАЙЛ В public/uploads/ =====
       const uploadDir = path.join(__dirname, 'public', 'uploads');
       if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
@@ -630,16 +629,13 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
       fs.copyFileSync(req.file.path, localFilePath);
       console.log(`📁 Файл скопирован в public/uploads/: ${localFileName}`);
       
-      // ===== 2. УДАЛЯЕМ ВРЕМЕННЫЙ ФАЙЛ =====
       if (fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
       }
       
-      // ===== 3. ЗАГРУЖАЕМ В CLOUDINARY =====
       const fileBuffer = fs.readFileSync(localFilePath);
       const cloudinaryUrl = await storage.uploadFile(fileBuffer, fileName, fileType, 'uploads');
       
-      // ===== 4. ЕСЛИ ЗАГРУЗИЛОСЬ В CLOUDINARY — УДАЛЯЕМ ЛОКАЛЬНЫЙ =====
       if (cloudinaryUrl && cloudinaryUrl.startsWith('http')) {
         if (fs.existsSync(localFilePath)) {
           fs.unlinkSync(localFilePath);
@@ -870,7 +866,7 @@ app.get('/dashboard.html', function(req, res) { res.sendFile(path.join(__dirname
 startDB().then(function() {
   app.listen(PORT, function() { 
     console.log('🚀 Сервер запущен на http://localhost:' + PORT);
-    console.log('📦 Система бэкапов активна (каждые 10 минут)');
+    console.log('📦 Система бэкапов активна (каждые 7 минут)');
     console.log('💾 Хранится последних 16 бэкапов');
     if (storage.isConfigured) {
       console.log('📁 Хранилище Cloudinary подключено');
