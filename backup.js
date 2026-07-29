@@ -6,7 +6,7 @@ class DatabaseBackup {
   constructor() {
     this.dbPath = path.join(__dirname, 'database.sqlite');
     this.backupDir = path.join(__dirname, 'backups');
-    this.maxBackups = 4; // ТОЛЬКО 4 БЭКАПА (ЦИКЛИЧЕСКИЕ)
+    this.backupName = 'backup.sqlite.gz'; // ОДИН ФАЙЛ
     
     if (!fs.existsSync(this.backupDir)) {
       fs.mkdirSync(this.backupDir, { recursive: true });
@@ -20,7 +20,7 @@ class DatabaseBackup {
     this.isBackupInProgress = false;
     
     console.log('📁 Папка для бэкапов создана');
-    console.log(`📦 Максимум бэкапов: ${this.maxBackups} (циклическая перезапись)`);
+    console.log('📦 ОДИН бэкап (простая перезапись)');
   }
 
   validateBackup(filePath) {
@@ -47,32 +47,22 @@ class DatabaseBackup {
     }
   }
 
-  getValidBackups() {
+  getBackupInfo() {
     try {
-      const files = fs.readdirSync(this.backupDir)
-        .filter(f => f.startsWith('backup-') && f.endsWith('.sqlite.gz'))
-        .sort();
+      const backupPath = path.join(this.backupDir, this.backupName);
+      if (!fs.existsSync(backupPath)) return null;
       
-      const validBackups = [];
-      for (const file of files) {
-        const filePath = path.join(this.backupDir, file);
-        if (this.validateBackup(filePath)) {
-          const stats = fs.statSync(filePath);
-          const index = parseInt(file.match(/backup-(\d+)\.sqlite\.gz/)?.[1] || '0');
-          validBackups.push({
-            name: file,
-            path: filePath,
-            size: stats.size,
-            mtime: stats.mtime,
-            index: index
-          });
-        }
-      }
+      if (!this.validateBackup(backupPath)) return null;
       
-      validBackups.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-      return validBackups;
+      const stats = fs.statSync(backupPath);
+      return {
+        name: this.backupName,
+        path: backupPath,
+        size: stats.size,
+        mtime: stats.mtime
+      };
     } catch (e) {
-      return [];
+      return null;
     }
   }
 
@@ -102,25 +92,7 @@ class DatabaseBackup {
         return null;
       }
 
-      const existingBackups = this.getValidBackups();
-      
-      let nextIndex = 1;
-      if (existingBackups.length > 0) {
-        const usedIndices = existingBackups.map(b => b.index);
-        for (let i = 1; i <= this.maxBackups; i++) {
-          if (!usedIndices.includes(i)) {
-            nextIndex = i;
-            break;
-          }
-        }
-        if (nextIndex === 1 && existingBackups.length === this.maxBackups) {
-          const oldest = existingBackups[existingBackups.length - 1];
-          nextIndex = oldest.index;
-        }
-      }
-
-      const backupName = `backup-${nextIndex}.sqlite.gz`;
-      const backupPath = path.join(this.backupDir, backupName);
+      const backupPath = path.join(this.backupDir, this.backupName);
       
       const compressed = zlib.gzipSync(data, { level: 9 });
       
@@ -129,16 +101,14 @@ class DatabaseBackup {
         return null;
       }
       
+      // ПРОСТО ПЕРЕЗАПИСЫВАЕМ ФАЙЛ
       fs.writeFileSync(backupPath, compressed);
       
       const originalSize = (data.length / 1024 / 1024).toFixed(2);
       const compressedSize = (compressed.length / 1024 / 1024).toFixed(2);
       
-      console.log(`✅ Бэкап создан: ${backupName}`);
-      console.log(`📦 ${originalSize} MB → ${compressedSize} MB (${nextIndex}/${this.maxBackups})`);
-      
-      const latestPath = path.join(this.backupDir, 'latest.sqlite.gz');
-      fs.writeFileSync(latestPath, compressed);
+      console.log(`✅ Бэкап создан: ${this.backupName}`);
+      console.log(`📦 ${originalSize} MB → ${compressedSize} MB`);
       
       // Обновляем статус для фронтенда
       this.updateFrontendStatus();
@@ -156,42 +126,52 @@ class DatabaseBackup {
   updateFrontendStatus() {
     try {
       const statusPath = path.join(__dirname, 'public', 'backup-status.json');
-      const backups = this.getValidBackups();
-      const status = {
-        lastBackup: new Date().toISOString(),
-        total: backups.length,
-        max: this.maxBackups,
-        backups: backups.map((b, index) => ({
-          name: b.name,
-          size: (b.size / 1024).toFixed(2) + ' KB',
-          date: b.mtime.toISOString(),
-          isLatest: index === 0
-        }))
+      const backupInfo = this.getBackupInfo();
+      
+      let status = {
+        lastBackup: null,
+        total: 0,
+        max: 1,
+        backups: []
       };
+      
+      if (backupInfo) {
+        status = {
+          lastBackup: backupInfo.mtime.toISOString(),
+          total: 1,
+          max: 1,
+          backups: [{
+            name: backupInfo.name,
+            size: (backupInfo.size / 1024).toFixed(2) + ' KB',
+            date: backupInfo.mtime.toISOString(),
+            isLatest: true
+          }]
+        };
+      }
+      
       fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
-      console.log('📡 Статус бэкапов обновлен');
+      console.log('📡 Статус бэкапа обновлен');
     } catch (e) {
       console.log('⚠️ Ошибка обновления статуса:', e.message);
     }
   }
 
   async restoreFromBackup() {
-    console.log('\n🔄 ПОИСК СВЕЖЕГО БЭКАПА...');
+    console.log('\n🔄 ПОИСК БЭКАПА...');
     
-    const backups = this.getValidBackups();
+    const backupInfo = this.getBackupInfo();
     
-    if (backups.length === 0) {
-      console.log('ℹ️ Нет валидных бэкапов');
+    if (!backupInfo) {
+      console.log('ℹ️ Нет валидного бэкапа');
       return false;
     }
     
-    const latest = backups[0];
-    console.log(`📥 Найден бэкап: ${latest.name}`);
-    console.log(`📅 Дата: ${latest.mtime.toLocaleString('ru-RU')}`);
-    console.log(`📦 Размер: ${(latest.size / 1024).toFixed(2)} KB`);
+    console.log(`📥 Найден бэкап: ${backupInfo.name}`);
+    console.log(`📅 Дата: ${backupInfo.mtime.toLocaleString('ru-RU')}`);
+    console.log(`📦 Размер: ${(backupInfo.size / 1024).toFixed(2)} KB`);
     
     try {
-      const compressed = fs.readFileSync(latest.path);
+      const compressed = fs.readFileSync(backupInfo.path);
       const data = zlib.gunzipSync(compressed);
       
       fs.writeFileSync(this.dbPath, data);
@@ -246,7 +226,7 @@ const backup = new DatabaseBackup();
   console.log('✅ Проверка БД завершена\n');
 })();
 
-// ===== БЭКАП КАЖДУЮ МИНУТУ (при изменениях) =====
+// ===== БЭКАП КАЖДУЮ МИНУТУ =====
 setInterval(async () => {
   console.log('⏰ Плановый бэкап...');
   await backup.instantBackup('плановый');
@@ -254,7 +234,7 @@ setInterval(async () => {
 
 // ===== ОБНОВЛЕНИЕ СТАТУСА НА САЙТЕ КАЖДЫЕ 6 МИНУТ =====
 setInterval(() => {
-  console.log('📡 Обновление статуса бэкапов на сайте...');
+  console.log('📡 Обновление статуса бэкапа на сайте...');
   backup.updateFrontendStatus();
 }, 6 * 60 * 1000);
 

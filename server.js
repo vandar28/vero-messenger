@@ -370,7 +370,7 @@ app.get('/api/backup/status', function(req, res) {
       const data = fs.readFileSync(statusPath, 'utf8');
       res.json(JSON.parse(data));
     } else {
-      res.json({ total: 0, max: 4, backups: [] });
+      res.json({ total: 0, max: 1, backups: [] });
     }
   } catch (e) {
     res.status(500).json({ error: 'Ошибка получения статуса' });
