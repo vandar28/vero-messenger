@@ -761,6 +761,138 @@ body.chat-open #tc {
 .msg .file-box{background:rgba(255,255,255,0.06);padding:5px 7px;border-radius:5px;margin:2px 0;cursor:pointer;display:flex;align-items:center;gap:5px;transition:0.2s;font-size:9px}
 .msg .file-box:hover{background:rgba(255,255,255,0.12)}
 
+/* ========== РАСШИРЯЮЩЕЕСЯ ПОЛЕ ВВОДА ========== */
+#mi {
+  resize: none;
+  min-height: 36px;
+  max-height: 150px;
+  overflow-y: auto;
+  line-height: 1.4;
+  padding: 8px 10px;
+  transition: height 0.1s ease;
+}
+
+/* ========== КНОПКА ГОЛОСОВОГО СООБЩЕНИЯ (КАК В ТГ) ========== */
+.voice-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.voice-btn:hover {
+  transform: scale(1.05);
+  background: var(--accent-light);
+}
+
+.voice-btn.recording {
+  background: var(--red);
+  animation: pulse 1.5s infinite;
+}
+
+.icon-svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+/* ===== МЕНЮ РЕДАКТИРОВАНИЯ СООБЩЕНИЯ ===== */
+.edit-msg-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 150;
+  align-items: center;
+  justify-content: center;
+}
+
+.edit-msg-modal.active {
+  display: flex;
+}
+
+.edit-msg-modal .modal-content {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 20px;
+  width: 90%;
+  max-width: 400px;
+  border: 1px solid var(--border);
+}
+
+.edit-msg-modal .modal-content textarea {
+  width: 100%;
+  padding: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  resize: vertical;
+  min-height: 60px;
+  margin-bottom: 10px;
+}
+
+.edit-msg-modal .modal-content .edit-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* ========== НАСТРОЙКИ РАЗМЕРА ЧАТА ========== */
+.chat-size-control {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-size-control label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.chat-size-control input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+  background: var(--bg-input);
+  height: 4px;
+  border-radius: 2px;
+  -webkit-appearance: none;
+}
+
+.chat-size-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.chat-size-control .size-value {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 30px;
+  text-align: center;
+}
+
 /* ========== ОТВЕТ НА СООБЩЕНИЕ (КАК В TELEGRAM) ========== */
 .reply-indicator {
   display: none;
@@ -1088,6 +1220,19 @@ body.chat-open #tc {
     <button class="upload-new-btn" onclick="changeUsername()" style="margin-bottom:8px;background:var(--green-bg);color:var(--green);border-color:var(--green)">✏️ Сменить имя</button>
     <div class="section-title">История аватарок</div>
     <div class="avatar-history" id="avatarHistory"><div class="empty-history">Загрузка...</div></div>
+    
+    <!-- НАСТРОЙКИ РАЗМЕРА ЧАТА -->
+    <div class="chat-size-control">
+      <label>📏 Размер шрифта</label>
+      <input type="range" min="10" max="18" value="13" id="fontSizeRange" oninput="changeFontSize(this.value)">
+      <span class="size-value" id="fontSizeValue">13px</span>
+    </div>
+    <div class="chat-size-control">
+      <label>📐 Ширина чата</label>
+      <input type="range" min="40" max="85" value="65" id="maxWidthRange" oninput="changeMaxWidth(this.value)">
+      <span class="size-value" id="maxWidthValue">65%</span>
+    </div>
+    
     <button class="close-btn" onclick="closeSettings()">Закрыть</button>
   </div>
 </div>
@@ -1162,6 +1307,13 @@ var searchResults=[],searchIndex=0;
 var currentMediaTab='all',cachedMedia=[];
 var replyToMsg=null;
 var typingTimeout=null;
+
+// ===== НОВЫЕ ПЕРЕМЕННЫЕ =====
+var isRecording = false;
+var voiceRecorder = null;
+var voiceChunks = [];
+var chatFontSize = parseInt(localStorage.getItem('chatFontSize')) || 13;
+var chatMaxWidth = parseInt(localStorage.getItem('chatMaxWidth')) || 65;
 
 var isTemp=localStorage.getItem('is_temp')==='true'||U.is_temp;
 if(isTemp){
@@ -1558,8 +1710,8 @@ function oc(id,name,avatar){
     '</div>'+
     '<div class="paste-preview" id="pastePreview"></div>'+
     '<div class="photo-send-options" id="photoSendOptions"><span style="font-size:9px;color:var(--text-muted);margin-right:3px">Режим фото:</span><button class="photo-send-option normal" id="photoNormalBtn" onclick="selectPhotoMode(\'normal\')">📷 Обычное</button><button class="photo-send-option destruct" id="photoDestructBtn" onclick="selectPhotoMode(\'destruct\')">🔥 Одноразовое</button></div>'+
-    '<div class="recording-bar" id="recBar">⏺️ Запись... <span id="recTime">0:00</span> <button class="btn" onclick="stopRecording()" style="background:#fff;color:var(--red);margin-left:6px;padding:4px 10px;font-size:10px">Стоп</button></div>'+
-    '<div class="chat-input-area"><input type="text" id="mi" placeholder="Сообщение..."><input type="file" id="cf" style="display:none" multiple><button class="btn btn-gray" id="ab" style="padding:6px 10px;font-size:10px">📎</button><button class="btn btn-gray" id="stickerBtn" style="padding:6px 10px;font-size:10px">😊</button><button class="btn btn-gray" id="micBtn" style="padding:6px 10px;font-size:10px">🎤</button><button class="btn btn-gray" id="vidBtn" style="padding:6px 10px;font-size:10px">📹</button><button class="btn" id="sb" style="padding:6px 14px;font-size:10px">Отпр.</button></div></div>'+
+    '<div class="recording-bar" id="recBar">⏺️ Запись... <span id="recTime">0:00</span></div>'+
+    '<div class="chat-input-area"><input type="text" id="mi" placeholder="Сообщение..."><input type="file" id="cf" style="display:none" multiple><button class="btn btn-gray" id="ab" style="padding:6px 10px;font-size:10px">📎</button><button class="btn btn-gray" id="stickerBtn" style="padding:6px 10px;font-size:10px">😊</button><button class="voice-btn" id="voiceBtn" title="Голосовое сообщение"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 2C10.34 2 9 3.34 9 5v6c0 1.66 1.34 3 3 3s3-1.34 3-3V5c0-1.66-1.34-3-3-3z"/><path d="M19 11v1c0 3.87-3.13 7-7 7s-7-3.13-7-7v-1H3v1c0 5.28 4.11 9.63 9 9.98V21h-2v2h6v-2h-2v-1.02c4.89-.35 9-4.7 9-9.98v-1h-2z"/></svg></span></button><button class="btn btn-gray" id="vidBtn" style="padding:6px 10px;font-size:10px">📹</button><button class="btn" id="sb" style="padding:6px 14px;font-size:10px">Отпр.</button></div></div>'+
     '</div>';
     
     document.body.appendChild(fs);
@@ -1568,7 +1720,13 @@ function oc(id,name,avatar){
     document.getElementById('cf').onchange=function(e){var files=e.target.files;for(var i=0;i<files.length;i++)addPastedFile(files[i]);updatePastePreview()};
     document.getElementById('sb').onclick=function(){if(pastedFiles.length>0)sendPastedFiles(id);else sm(id)};
     document.getElementById('mi').onkeypress=function(e){if(e.key==='Enter'){if(pastedFiles.length>0)sendPastedFiles(id);else sm(id)}};
-    document.getElementById('micBtn').onclick=function(){startRec('audio')};
+    
+    // Голосовая кнопка
+    var voiceBtn = document.getElementById('voiceBtn');
+    if (voiceBtn) {
+        voiceBtn.onclick = toggleVoiceRecording;
+    }
+    
     document.getElementById('vidBtn').onclick=function(){startRec('video')};
     document.getElementById('stickerBtn').onclick=function(){openStickerModal()};
     
@@ -1590,6 +1748,12 @@ function oc(id,name,avatar){
     
     document.getElementById('sb').addEventListener('click', function() {
         api('/api/user/stop-typing', {method:'POST'}).catch(function(){});
+    });
+    
+    // Расширение поля ввода
+    document.getElementById('mi').addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 150) + 'px';
     });
     
     // Получение статуса собеседника в шапке
@@ -1840,7 +2004,6 @@ function forwardTo(fid,fname){
 
 // ========== РЕАКЦИИ (НОВАЯ ВЕРСИЯ С КНОПКАМИ) ==========
 function showMsgActions(el, msgId) {
-    // Удаляем старые меню
     document.querySelectorAll('.msg-actions').forEach(function(m) { m.remove(); });
     document.querySelectorAll('.msg').forEach(function(m) { m.classList.remove('has-actions'); });
     
@@ -1854,7 +2017,6 @@ function showMsgActions(el, msgId) {
     }
     if (!msg) return;
     
-    // Создаем контейнер с кнопками
     var actions = document.createElement('div');
     actions.className = 'msg-actions show';
     
@@ -1871,12 +2033,11 @@ function showMsgActions(el, msgId) {
     };
     actions.appendChild(replyBtn);
     
-    // Разделитель
     var divider = document.createElement('div');
     divider.className = 'action-divider';
     actions.appendChild(divider);
     
-    // Кнопка "Реакция" (открывает панель реакций)
+    // Кнопка "Реакция"
     var reactionBtn = document.createElement('button');
     reactionBtn.className = 'action-btn reaction-btn';
     reactionBtn.innerHTML = '😊';
@@ -1885,16 +2046,34 @@ function showMsgActions(el, msgId) {
         e.stopPropagation();
         actions.classList.remove('show');
         setTimeout(function() { actions.remove(); }, 300);
-        // Открываем панель реакций
         toggleReactionPicker(el, msgId);
     };
     actions.appendChild(reactionBtn);
+    
+    // Кнопка "Редактировать" (только для своих сообщений)
+    if (msg.sender_id === U.id) {
+        var divider2 = document.createElement('div');
+        divider2.className = 'action-divider';
+        actions.appendChild(divider2);
+        
+        var editBtn = document.createElement('button');
+        editBtn.className = 'action-btn';
+        editBtn.innerHTML = '✏️';
+        editBtn.title = 'Редактировать';
+        editBtn.style.color = 'var(--green)';
+        editBtn.onclick = function(e) {
+            e.stopPropagation();
+            actions.classList.remove('show');
+            setTimeout(function() { actions.remove(); }, 300);
+            editMessage(msgId);
+        };
+        actions.appendChild(editBtn);
+    }
     
     el.style.position = 'relative';
     el.appendChild(actions);
     el.classList.add('has-actions');
     
-    // Скрываем при клике вне
     setTimeout(function() {
         document.addEventListener('click', function closeActions(e) {
             if (!e.target.closest('.msg-actions') && !e.target.closest('.msg')) {
@@ -1908,7 +2087,6 @@ function showMsgActions(el, msgId) {
         });
     }, 100);
     
-    // Автоматически скрываем через 5 секунд
     setTimeout(function() {
         if (actions.parentNode) {
             actions.classList.remove('show');
@@ -1918,11 +2096,9 @@ function showMsgActions(el, msgId) {
 }
 
 function toggleReactionPicker(msgEl, msgId) {
-    // Закрываем старый пикер
     var oldPicker = document.getElementById('reactionPicker');
     if (oldPicker) oldPicker.remove();
     
-    // Проверяем, есть ли уже активный пикер для этого сообщения
     if (activeReactionMsg === msgId) {
         activeReactionMsg = null;
         return;
@@ -1954,7 +2130,6 @@ function toggleReactionPicker(msgEl, msgId) {
         activeReactionMsg = null;
     }, 5000);
     
-    // Закрываем при клике вне
     setTimeout(function() {
         document.addEventListener('click', function closePicker(e) {
             if (!e.target.closest('.reaction-picker') && !e.target.closest('.msg')) {
@@ -2118,36 +2293,229 @@ function cancelReply() {
     }
 }
 
+// ===== РЕДАКТИРОВАНИЕ СООБЩЕНИЯ =====
+function editMessage(msgId) {
+    var msgData = cachedMessages[ct.id] || [];
+    var msg = null;
+    for (var i = 0; i < msgData.length; i++) {
+        if (msgData[i].id == msgId) {
+            msg = msgData[i];
+            break;
+        }
+    }
+    if (!msg) return;
+    if (msg.sender_id !== U.id) {
+        alert('Вы не можете редактировать чужие сообщения');
+        return;
+    }
+    
+    var modal = document.createElement('div');
+    modal.className = 'edit-msg-modal active';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3 style="margin-bottom:10px;font-size:13px;">✏️ Редактировать сообщение</h3>
+            <textarea id="editText">${msg.message_text || ''}</textarea>
+            <div class="edit-buttons">
+                <button class="btn btn-gray" onclick="this.closest('.edit-msg-modal').remove()">Отмена</button>
+                <button class="btn" id="saveEditBtn">Сохранить</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    var textarea = modal.querySelector('#editText');
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    
+    modal.querySelector('#saveEditBtn').onclick = function() {
+        var newText = textarea.value.trim();
+        if (!newText) {
+            alert('Текст не может быть пустым');
+            return;
+        }
+        
+        api('/api/messages/' + msgId, {
+            method: 'PUT',
+            body: { message_text: newText }
+        }).then(function(r) { return r.json() }).then(function(d) {
+            if (d.ok) {
+                modal.remove();
+                lm(ct.id, true);
+            } else {
+                alert('Ошибка: ' + (d.error || 'Неизвестная ошибка'));
+            }
+        }).catch(function(err) {
+            alert('Ошибка редактирования');
+        });
+    };
+    
+    modal.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') modal.remove();
+    });
+}
+
+// ===== ИЗМЕНЕНИЕ РАЗМЕРА ЧАТА =====
+function updateChatSize() {
+    var messages = document.querySelectorAll('.msg');
+    var sizePercent = chatMaxWidth + '%';
+    messages.forEach(function(msg) {
+        msg.style.maxWidth = sizePercent;
+        msg.style.fontSize = chatFontSize + 'px';
+    });
+    localStorage.setItem('chatFontSize', chatFontSize);
+    localStorage.setItem('chatMaxWidth', chatMaxWidth);
+    
+    var fontSizeRange = document.getElementById('fontSizeRange');
+    var fontSizeValue = document.getElementById('fontSizeValue');
+    var maxWidthRange = document.getElementById('maxWidthRange');
+    var maxWidthValue = document.getElementById('maxWidthValue');
+    if (fontSizeRange) fontSizeRange.value = chatFontSize;
+    if (fontSizeValue) fontSizeValue.textContent = chatFontSize + 'px';
+    if (maxWidthRange) maxWidthRange.value = chatMaxWidth;
+    if (maxWidthValue) maxWidthValue.textContent = chatMaxWidth + '%';
+}
+
+function changeFontSize(value) {
+    chatFontSize = parseInt(value);
+    updateChatSize();
+}
+
+function changeMaxWidth(value) {
+    chatMaxWidth = parseInt(value);
+    updateChatSize();
+}
+
+function loadChatSizeSettings() {
+    setTimeout(updateChatSize, 500);
+}
+
+// ===== ЗАПИСЬ ГОЛОСОВОГО СООБЩЕНИЯ (ОДНА КНОПКА) =====
+async function toggleVoiceRecording() {
+    var voiceBtn = document.getElementById('voiceBtn');
+    
+    if (isRecording) {
+        if (voiceRecorder && voiceRecorder.state === 'recording') {
+            voiceRecorder.stop();
+            if (voiceRecorder._timer) {
+                clearInterval(voiceRecorder._timer);
+                voiceRecorder._timer = null;
+            }
+        }
+        voiceBtn.classList.remove('recording');
+        voiceBtn.innerHTML = `<span class="icon"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 2C10.34 2 9 3.34 9 5v6c0 1.66 1.34 3 3 3s3-1.34 3-3V5c0-1.66-1.34-3-3-3z"/><path d="M19 11v1c0 3.87-3.13 7-7 7s-7-3.13-7-7v-1H3v1c0 5.28 4.11 9.63 9 9.98V21h-2v2h6v-2h-2v-1.02c4.89-.35 9-4.7 9-9.98v-1h-2z"/></svg></span>`;
+        voiceBtn.title = 'Голосовое сообщение';
+        isRecording = false;
+        document.getElementById('recBar').style.display = 'none';
+        return;
+    }
+    
+    try {
+        var stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                sampleRate: 48000,
+                channelCount: 1
+            }
+        });
+        
+        var mimeType = 'audio/webm;codecs=opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'audio/webm';
+        }
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'audio/ogg;codecs=opus';
+        }
+        
+        voiceRecorder = new MediaRecorder(stream, {
+            mimeType: mimeType,
+            audioBitsPerSecond: 128000
+        });
+        
+        voiceChunks = [];
+        var startTime = Date.now();
+        
+        voiceRecorder.ondataavailable = function(e) {
+            if (e.data.size > 0) voiceChunks.push(e.data);
+        };
+        
+        voiceRecorder.onstop = function() {
+            stream.getTracks().forEach(function(t) { t.stop(); });
+            
+            var blob = new Blob(voiceChunks, { type: mimeType });
+            
+            if (blob.size < 1000) {
+                alert('Запись слишком короткая');
+                return;
+            }
+            
+            var fileName = 'voice_' + Date.now() + '.webm';
+            var file = new File([blob], fileName, { type: mimeType });
+            
+            sendFile(ct.id, file);
+            document.getElementById('recBar').style.display = 'none';
+        };
+        
+        voiceRecorder.start(100);
+        isRecording = true;
+        
+        voiceBtn.classList.add('recording');
+        voiceBtn.innerHTML = `<span class="icon">⏹</span>`;
+        voiceBtn.title = 'Остановить запись';
+        
+        document.getElementById('recBar').style.display = 'block';
+        document.getElementById('recBar').innerHTML = '⏺️ Запись... <span id="recTime">0:00</span>';
+        
+        voiceRecorder._timer = setInterval(function() {
+            var elapsed = Math.floor((Date.now() - startTime) / 1000);
+            var minutes = Math.floor(elapsed / 60);
+            var seconds = elapsed % 60;
+            var timeEl = document.getElementById('recTime');
+            if (timeEl) {
+                timeEl.textContent = minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+            }
+        }, 1000);
+        
+    } catch(e) {
+        console.error('Ошибка доступа к микрофону:', e);
+        alert('Нет доступа к микрофону. Разрешите доступ в настройках браузера.');
+    }
+}
+
+// ===== КЛИК В ЧАТЕ (НЕ НА СООБЩЕНИИ) =====
+document.addEventListener('click', function(e) {
+    var cm = document.getElementById('cm');
+    if (cm && cm.contains(e.target) && !e.target.closest('.msg')) {
+        document.querySelectorAll('.msg-actions').forEach(function(m) { m.remove(); });
+    }
+});
+
 function attachMsgEvents(el, msg) {
     var msgId = msg.id;
     var isSent = msg.sender_id === U.id;
     
-    // Одиночный клик - показывает кнопки (реакции + ответ)
     el.addEventListener('click', function(e) {
         e.stopPropagation();
         if (el.classList.contains('selected')) return;
         showMsgActions(el, msgId);
     });
     
-    // Двойной клик - выделение
     el.addEventListener('dblclick', function(e) {
         e.stopPropagation();
         toggleMessage(el, msgId, isSent);
     });
     
-    // Долгое нажатие - ответ
     var longPressTimer = null;
     el.addEventListener('touchstart', function(e) {
         longPressTimer = setTimeout(function() {
             if (navigator.vibrate) navigator.vibrate(20);
-            // Показываем кнопки
             showMsgActions(el, msgId);
         }, 400);
     });
     el.addEventListener('touchend', function() { clearTimeout(longPressTimer); });
     el.addEventListener('touchmove', function() { clearTimeout(longPressTimer); });
     
-    // ПКМ - ответ
     el.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         startReplyToMessage(msgId, msg.message_text, msg.file_path, msg.file_name);
@@ -2243,7 +2611,6 @@ function lm(id,silent,callback){
             var con='',isSent=m.sender_id===U.id;
             if(!isSent)con+='<div class="msg-header"><div class="msg-avatar" onclick="event.stopPropagation();viewUserAvatars('+m.sender_id+',\''+m.username+'\')">'+av(m.avatar)+'</div><span class="msg-username">'+m.username+'</span></div>';
             
-            // ===== ОТВЕТ НА СООБЩЕНИЕ (ПРЕВЬЮ В СООБЩЕНИИ) =====
             if (m.reply_to) {
                 var replySender = m.reply_sender || 'Пользователь';
                 var replyText = m.reply_text || 'Сообщение';
@@ -2272,7 +2639,6 @@ function lm(id,silent,callback){
                         con+='<img src="'+displaySrc+'" class="msg-img" onclick="event.stopPropagation();ol(\''+imgSrc+'\',\''+m.file_type+'\')" loading="lazy">';
                     }
                 }else if(m.file_type&&m.file_type.startsWith('video/')){
-                    // ===== ВИДЕО-КРУЖОК =====
                     var videoData = {
                         url: m.file_path,
                         file_path: m.file_path,
@@ -2325,7 +2691,6 @@ function lm(id,silent,callback){
                 }
             }
             
-            // Привязываем события для видео-кружков
             var videoCircle = el.querySelector('.video-circle');
             if (videoCircle) {
                 var video = videoCircle.querySelector('video');
@@ -2355,6 +2720,10 @@ function lm(id,silent,callback){
         
         if(bottom||!silent)c.scrollTop=c.scrollHeight;
         if(callback)callback();
+        
+        if (typeof updateChatSize === 'function') {
+            setTimeout(updateChatSize, 100);
+        }
         
         api('/api/user/status/' + id).then(function(r){return r.json()}).then(function(status){
             var statusEl = document.querySelector('.chat-status');
@@ -2598,7 +2967,7 @@ function playAudio(btn, url) {
     currentAudioBtn = btn;
 }
 
-// ===== ЗАПИСЬ АУДИО/ВИДЕО =====
+// ===== ЗАПИСЬ ВИДЕО =====
 async function startRec(type) {
     try {
         var constraints = {
@@ -2656,7 +3025,6 @@ async function startRec(type) {
             if (blob.size < 1000) {
                 alert('Запись слишком короткая или пустая.');
                 document.getElementById('recBar').style.display = 'none';
-                document.getElementById('micBtn').classList.remove('btn-rec');
                 document.getElementById('vidBtn').classList.remove('btn-rec');
                 return;
             }
@@ -2667,7 +3035,6 @@ async function startRec(type) {
             
             sendFile(ct.id, file);
             document.getElementById('recBar').style.display = 'none';
-            document.getElementById('micBtn').classList.remove('btn-rec');
             document.getElementById('vidBtn').classList.remove('btn-rec');
         };
         
@@ -2686,21 +3053,12 @@ async function startRec(type) {
         }, 1000);
         
         mediaRecorder._timer = recTimer;
-        
-        if (type === 'audio') {
-            document.getElementById('micBtn').classList.add('btn-rec');
-            document.getElementById('vidBtn').classList.remove('btn-rec');
-        } else {
-            document.getElementById('vidBtn').classList.add('btn-rec');
-            document.getElementById('micBtn').classList.remove('btn-rec');
-        }
+        document.getElementById('vidBtn').classList.add('btn-rec');
         
     } catch(e) {
         console.error('Ошибка доступа к микрофону/камере:', e);
         if (type === 'video') {
             alert('Нет доступа к камере и микрофону. Разрешите доступ в настройках браузера.');
-        } else {
-            alert('Нет доступа к микрофону. Разрешите доступ в настройках браузера.');
         }
     }
 }
@@ -2722,7 +3080,15 @@ function logout(){
     else{localStorage.clear();location.href='/login.html'}
 }
 
-function openSettings(){document.getElementById('settingsModal').classList.add('active');document.body.style.overflow='hidden';loadMyAvatars();var ca=document.getElementById('currentAvatar');ca.src=U.avatar||''}
+function openSettings(){
+    document.getElementById('settingsModal').classList.add('active');
+    document.body.style.overflow='hidden';
+    loadMyAvatars();
+    var ca=document.getElementById('currentAvatar');
+    ca.src=U.avatar||'';
+    setTimeout(loadChatSizeSettings, 200);
+}
+
 function closeSettings(){document.getElementById('settingsModal').classList.remove('active');document.body.style.overflow=''}
 document.getElementById('settingsModal').addEventListener('click',function(e){if(e.target===this)closeSettings()});
 
