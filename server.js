@@ -132,7 +132,7 @@ setInterval(async () => {
 
 // ===== ФУНКЦИЯ ЗАПУСКА БД =====
 async function startDB() {
-  // ===== ОЧИСТКА СТАРЫХ БЭКАПОВ (ОДИН РАЗ) =====
+  // ===== ПРИНУДИТЕЛЬНОЕ УДАЛЕНИЕ ВСЕХ БЭКАПОВ =====
   try {
     const backupDir = path.join(__dirname, 'backups');
     if (fs.existsSync(backupDir)) {
@@ -143,11 +143,11 @@ async function startDB() {
           const filePath = path.join(backupDir, file);
           fs.unlinkSync(filePath);
           deleted++;
-          console.log(`🗑️ Удален старый бэкап: ${file}`);
+          console.log(`🗑️ Удален: ${file}`);
         }
       }
       if (deleted > 0) {
-        console.log(`✅ Очищено ${deleted} старых бэкапов`);
+        console.log(`✅ Удалено ${deleted} старых бэкапов`);
       }
     }
   } catch (e) {
