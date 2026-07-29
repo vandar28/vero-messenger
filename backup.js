@@ -140,6 +140,7 @@ class DatabaseBackup {
       const latestPath = path.join(this.backupDir, 'latest.sqlite.gz');
       fs.writeFileSync(latestPath, compressed);
       
+      // Обновляем статус для фронтенда
       this.updateFrontendStatus();
       
       return backupPath;
@@ -168,7 +169,10 @@ class DatabaseBackup {
         }))
       };
       fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
-    } catch (e) {}
+      console.log('📡 Статус бэкапов обновлен');
+    } catch (e) {
+      console.log('⚠️ Ошибка обновления статуса:', e.message);
+    }
   }
 
   async restoreFromBackup() {
@@ -242,11 +246,19 @@ const backup = new DatabaseBackup();
   console.log('✅ Проверка БД завершена\n');
 })();
 
+// ===== БЭКАП КАЖДУЮ МИНУТУ (при изменениях) =====
 setInterval(async () => {
   console.log('⏰ Плановый бэкап...');
   await backup.instantBackup('плановый');
 }, 60 * 1000);
 
+// ===== ОБНОВЛЕНИЕ СТАТУСА НА САЙТЕ КАЖДЫЕ 6 МИНУТ =====
+setInterval(() => {
+  console.log('📡 Обновление статуса бэкапов на сайте...');
+  backup.updateFrontendStatus();
+}, 6 * 60 * 1000);
+
+// ===== ПРОВЕРКА БД КАЖДЫЕ 30 СЕКУНД =====
 setInterval(async () => {
   try {
     if (!fs.existsSync(backup.dbPath)) {
