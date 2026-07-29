@@ -8,10 +8,7 @@ const fs = require('fs');
 const uuid = require('uuid').v4;
 const initSqlJs = require('sql.js');
 
-// ===== ПОДКЛЮЧАЕМ СИСТЕМУ БЭКАПОВ =====
 const backup = require('./backup');
-
-// ===== ПОДКЛЮЧАЕМ ХРАНИЛИЩЕ =====
 const storage = require('./storage-cloudinary');
 
 const app = express();
@@ -25,7 +22,6 @@ app.use(express.static('public'));
 let db;
 const DB_PATH = 'database.sqlite';
 
-// ===== ФУНКЦИЯ ДЛЯ МГНОВЕННОГО БЭКАПА =====
 async function backupNow(reason = 'изменение') {
   try {
     await backup.instantBackup(reason);
@@ -34,7 +30,6 @@ async function backupNow(reason = 'изменение') {
   }
 }
 
-// ===== ПРОВЕРКА БД ПРИ ЗАПУСКЕ =====
 (async function ensureDatabase() {
   console.log('🔍 ПРОВЕРКА БД ПРИ ЗАПУСКЕ СЕРВЕРА...');
   
@@ -82,7 +77,6 @@ async function backupNow(reason = 'изменение') {
   }
 })();
 
-// ===== УДАЛЯЕМ ПОВРЕЖДЕННУЮ БД =====
 if (fs.existsSync(DB_PATH)) {
   try {
     const stats = fs.statSync(DB_PATH);
@@ -96,7 +90,6 @@ if (fs.existsSync(DB_PATH)) {
   }
 }
 
-// ===== ПРОВЕРКА БД КАЖДУЮ МИНУТУ =====
 setInterval(async () => {
   try {
     if (!fs.existsSync(DB_PATH)) {
@@ -130,35 +123,11 @@ setInterval(async () => {
   }
 }, 60 * 1000);
 
-// ===== ФУНКЦИЯ ЗАПУСКА БД =====
 async function startDB() {
-  // ===== ПРИНУДИТЕЛЬНОЕ УДАЛЕНИЕ ВСЕХ БЭКАПОВ =====
-  try {
-    const backupDir = path.join(__dirname, 'backups');
-    if (fs.existsSync(backupDir)) {
-      const files = fs.readdirSync(backupDir);
-      let deleted = 0;
-      for (const file of files) {
-        if (file.endsWith('.sqlite.gz')) {
-          const filePath = path.join(backupDir, file);
-          fs.unlinkSync(filePath);
-          deleted++;
-          console.log(`🗑️ Удален: ${file}`);
-        }
-      }
-      if (deleted > 0) {
-        console.log(`✅ Удалено ${deleted} старых бэкапов`);
-      }
-    }
-  } catch (e) {
-    console.log('⚠️ Ошибка очистки бэкапов:', e.message);
-  }
-  
   const SQL = await initSqlJs();
   if (fs.existsSync(DB_PATH)) db = new SQL.Database(fs.readFileSync(DB_PATH));
   else db = new SQL.Database();
   
-  // Создаем таблицы
   db.run("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, email TEXT UNIQUE, password TEXT, avatar TEXT DEFAULT NULL, is_temp INTEGER DEFAULT 0, created_at DATETIME DEFAULT (datetime('now','+3 hours')), last_seen DATETIME DEFAULT NULL, is_online INTEGER DEFAULT 0, is_typing INTEGER DEFAULT 0, typing_to INTEGER DEFAULT NULL)");
   db.run("CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, user_id INTEGER, original_name TEXT, filename TEXT, file_type TEXT, file_size INTEGER, upload_date DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS friends (id INTEGER PRIMARY KEY AUTOINCREMENT, from_user INTEGER, to_user INTEGER, status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
@@ -169,7 +138,6 @@ async function startDB() {
   db.run("CREATE TABLE IF NOT EXISTS reactions (id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER, user_id INTEGER, reaction TEXT, created_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   db.run("CREATE TABLE IF NOT EXISTS file_access (user_id INTEGER PRIMARY KEY, granted_by INTEGER, granted_at DATETIME DEFAULT (datetime('now','+3 hours')))");
   
-  // ALTER для совместимости
   try { db.run("ALTER TABLE users ADD COLUMN is_temp INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL"); } catch(e) {}
   try { db.run("ALTER TABLE messages ADD COLUMN deleted_for_sender INTEGER DEFAULT 0"); } catch(e) {}
@@ -263,7 +231,6 @@ function saveDB() {
     fs.writeFileSync(DB_PATH, data);
     console.log('💾 БД сохранена');
     
-    // ===== МГНОВЕННЫЙ БЭКАП ПРИ КАЖДОМ СОХРАНЕНИИ =====
     setImmediate(async () => {
       try {
         await backup.instantBackup('сохранение БД');
@@ -341,7 +308,6 @@ const avatarStorageMulter = multer.diskStorage({
   }
 });
 
-// ===== РАЗРЕШАЕМ ВСЕ ТИПЫ ФАЙЛОВ =====
 const upload = multer({ 
   storage: storageMulter, 
   limits: { fileSize: 500 * 1024 * 1024 }, 
@@ -398,28 +364,17 @@ app.get('/api/backup/download', function(req, res) {
 });
 
 app.get('/api/backup/status', function(req, res) {
-  const backupDir = path.join(__dirname, 'backups');
-  if (!fs.existsSync(backupDir)) {
-    return res.json({ backups: [], total: 0, message: 'Нет бэкапов' });
+  try {
+    const statusPath = path.join(__dirname, 'public', 'backup-status.json');
+    if (fs.existsSync(statusPath)) {
+      const data = fs.readFileSync(statusPath, 'utf8');
+      res.json(JSON.parse(data));
+    } else {
+      res.json({ total: 0, max: 4, backups: [] });
+    }
+  } catch (e) {
+    res.status(500).json({ error: 'Ошибка получения статуса' });
   }
-  const files = fs.readdirSync(backupDir)
-    .filter(function(f) { return f.startsWith('backup-') && f.endsWith('.sqlite.gz'); })
-    .sort();
-  const backups = files.map(function(file) {
-    const filePath = path.join(backupDir, file);
-    const stats = fs.statSync(filePath);
-    return {
-      name: file,
-      size: (stats.size / 1024 / 1024).toFixed(2) + ' MB',
-      created: stats.birthtime,
-      modified: stats.mtime
-    };
-  });
-  res.json({
-    backups: backups.slice(-30),
-    total: backups.length,
-    maxBackups: 30
-  });
 });
 
 app.post('/api/register', uploadAvatar.single('avatar'), async function(req, res) {
@@ -454,7 +409,6 @@ app.post('/api/register', uploadAvatar.single('avatar'), async function(req, res
   
   const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: isTemp ? '24h' : '30d' });
   
-  // Мгновенный бэкап после регистрации
   backupNow('регистрация');
   
   res.json({ 
@@ -810,7 +764,6 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
         fs.unlinkSync(req.file.path);
       }
       
-      // ДЛЯ ВИДЕО И ИЗОБРАЖЕНИЙ - ЗАГРУЖАЕМ В CLOUDINARY
       const isVideo = fileType && fileType.startsWith('video/');
       const isImage = fileType && fileType.startsWith('image/');
       
@@ -835,7 +788,6 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
           console.log(`📁 Файл оставлен локально: ${filePath}`);
         }
       } else {
-        // ДЛЯ ОСТАЛЬНЫХ ФАЙЛОВ - ОСТАВЛЯЕМ ЛОКАЛЬНО
         filePath = '/uploads/' + localFileName;
         console.log(`📁 Файл оставлен локально: ${filePath}`);
       }
@@ -859,10 +811,7 @@ app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, 
     dbRun('INSERT INTO messages (sender_id, receiver_id, message_text, file_name, file_type, file_path, forward_from, forward_from_name, is_self_destruct, reply_to, reply_text, reply_sender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
       [req.userId, fid, text, fileName, fileType, filePath, forwardFrom, forwardFromName, isSelfDestruct, replyTo, replyText, replySender]);
     saveDB();
-    
-    // Мгновенный бэкап после каждого сообщения
     backupNow('новое сообщение');
-    
     res.json({ ok: true });
   } catch (error) {
     console.error('❌ Ошибка отправки сообщения:', error);
@@ -891,7 +840,6 @@ app.put('/api/messages/:id', auth, async function(req, res) {
     dbRun('UPDATE messages SET message_text=? WHERE id=?', [newText.trim(), msgId]);
     saveDB();
     backupNow('изменение сообщения');
-    
     res.json({ ok: true, message: 'Сообщение изменено' });
   } catch (error) {
     console.error('❌ Ошибка изменения сообщения:', error);
