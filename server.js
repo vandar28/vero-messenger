@@ -123,6 +123,21 @@ setInterval(async () => {
   }
 }, 60 * 1000);
 
+// ===== ПРИНУДИТЕЛЬНОЕ СОХРАНЕНИЕ БД КАЖДЫЕ 5 СЕКУНД =====
+setInterval(() => {
+  try {
+    if (db) {
+      const data = Buffer.from(db.export());
+      if (data.length > 100) {
+        fs.writeFileSync(DB_PATH, data);
+        console.log('💾 Принудительное сохранение БД');
+      }
+    }
+  } catch (e) {
+    console.log('⚠️ Ошибка принудительного сохранения:', e.message);
+  }
+}, 5000);
+
 async function startDB() {
   const SQL = await initSqlJs();
   if (fs.existsSync(DB_PATH)) db = new SQL.Database(fs.readFileSync(DB_PATH));
@@ -1057,6 +1072,7 @@ startDB().then(function() {
     console.log('🚀 Сервер запущен на http://localhost:' + PORT);
     console.log('📦 Система мгновенных бэкапов активна');
     console.log('⚡ Бэкап при каждом изменении');
+    console.log('💾 Принудительное сохранение БД каждые 5 секунд');
     if (storage.isConfigured) {
       console.log('📁 Хранилище Cloudinary подключено');
     } else {
