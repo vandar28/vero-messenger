@@ -4,8 +4,19 @@ const zlib = require('zlib');
 
 class DatabaseBackup {
   constructor() {
-    this.dbPath = path.join(__dirname, 'database.sqlite');
-    this.backupDir = path.join(__dirname, 'backups');
+    // Используем Render Disk если доступен, иначе локальную папку
+    const useRenderDisk = fs.existsSync('/data') || process.env.USE_RENDER_DISK === 'true';
+    
+    if (useRenderDisk) {
+      this.dbPath = '/data/database.sqlite';
+      this.backupDir = '/data/backups';
+      console.log('📁 Используем Render Disk: /data/');
+    } else {
+      this.dbPath = path.join(__dirname, 'database.sqlite');
+      this.backupDir = path.join(__dirname, 'backups');
+      console.log('📁 Используем локальную папку');
+    }
+    
     this.backupName = 'backup.sqlite.gz';
     this.tempBackupName = 'backup_temp.sqlite.gz';
     
@@ -15,7 +26,7 @@ class DatabaseBackup {
     
     this.isBackupInProgress = false;
     
-    console.log('📁 Папка для бэкапов создана');
+    console.log('📁 Папка для бэкапов:', this.backupDir);
     console.log('📦 ОДИН бэкап (простая перезапись)');
     console.log('⚠️ Включена ПРОВЕРКА ВАЛИДНОСТИ перед сохранением');
   }
@@ -95,6 +106,7 @@ class DatabaseBackup {
     this.isBackupInProgress = true;
     
     try {
+      // Проверяем существование БД
       if (!fs.existsSync(this.dbPath)) {
         console.log('❌ База данных не найдена');
         return null;
@@ -223,7 +235,14 @@ class DatabaseBackup {
 
   async instantBackup(reason = 'изменение') {
     console.log(`⚡ Мгновенный бэкап (${reason})...`);
-    return !!this.createBackup();
+    const result = !!this.createBackup();
+    
+    // Если используется Render Disk, даём время на запись
+    if (result && process.env.USE_RENDER_DISK === 'true') {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    return result;
   }
 
   async fullBackup() {
@@ -267,7 +286,7 @@ const backup = new DatabaseBackup();
   console.log('✅ Проверка БД завершена\n');
 })();
 
-// ===== БЭКАП КАЖДУЮ МИНУТУ =====
+// ===== БЭКАП КАЖДУЮ МИНУТУ ПРИ ИЗМЕНЕНИИ РАЗМЕРА =====
 let lastDbSize = 0;
 
 setInterval(async () => {

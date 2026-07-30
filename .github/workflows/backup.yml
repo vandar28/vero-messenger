@@ -2,11 +2,9 @@ name: Auto Backup Database
 
 on:
   schedule:
-    # Каждые 15 минут
-    - cron: '*/15 * * * *'
-  # Ручной запуск
+    # Каждые 5 минут (вместо 15)
+    - cron: '*/5 * * * *'
   workflow_dispatch:
-  # При пуше в main
   push:
     branches: [ main ]
 
@@ -30,11 +28,13 @@ jobs:
           echo "Скачиваем базу данных с Render..."
           curl -L -o database.sqlite https://vero-messenger.onrender.com/api/backup/download?key=${{ secrets.BACKUP_KEY }}
           
-          if [ -f database.sqlite ]; then
+          if [ -f database.sqlite ] && [ -s database.sqlite ]; then
             echo "✅ База данных скачана"
             ls -lh database.sqlite
+            # Проверяем, что это SQLite
+            file database.sqlite || echo "⚠️ Не удалось определить тип файла"
           else
-            echo "❌ База данных не скачана"
+            echo "❌ База данных не скачана или пустая"
             exit 0
           fi
       
@@ -43,7 +43,15 @@ jobs:
           echo "Сжимаем базу данных..."
           mkdir -p backups
           gzip -c database.sqlite > backups/latest.sqlite.gz
-          echo "✅ База данных сжата"
+          
+          # Проверяем размер сжатого файла
+          if [ -s backups/latest.sqlite.gz ]; then
+            echo "✅ База данных сжата"
+            echo "Размер сжатой БД: $(du -h backups/latest.sqlite.gz | cut -f1)"
+          else
+            echo "❌ Ошибка сжатия БД"
+            exit 1
+          fi
       
       - name: 🕐 Create timestamped backup
         run: |
@@ -51,11 +59,12 @@ jobs:
           cp backups/latest.sqlite.gz "backups/backup-${TIMESTAMP}.sqlite.gz"
           echo "✅ Создан бэкап: backup-${TIMESTAMP}.sqlite.gz"
       
-      - name: 🗑️ Clean old backups (keep 16)
+      - name: 🗑️ Clean old backups (keep 50)
         run: |
           echo "Очищаем старые бэкапы..."
           cd backups
-          ls -t backup-*.sqlite.gz 2>/dev/null | tail -n +17 | xargs -r rm
+          # Оставляем последние 50 бэкапов (вместо 16)
+          ls -t backup-*.sqlite.gz 2>/dev/null | tail -n +51 | xargs -r rm
           echo "✅ Осталось $(ls -1 backup-*.sqlite.gz 2>/dev/null | wc -l) бэкапов"
       
       - name: 📤 Commit and push to GitHub
@@ -86,3 +95,14 @@ jobs:
           echo "Самый свежий: $(ls -t backups/backup-*.sqlite.gz 2>/dev/null | head -1 | xargs basename)"
           echo "Самый старый: $(ls -t backups/backup-*.sqlite.gz 2>/dev/null | tail -1 | xargs basename)"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      
+      - name: ⚠️ Check if database has admin
+        run: |
+          echo "Проверяем наличие администратора в БД..."
+          if [ -f database.sqlite ]; then
+            if sqlite3 database.sqlite "SELECT COUNT(*) FROM users WHERE email='ad6@gmail.com';" 2>/dev/null | grep -q "1"; then
+              echo "✅ Администратор найден в БД"
+            else
+              echo "⚠️ Администратор НЕ найден в БД! Бэкап может быть невалидным."
+            fi
+          fi
