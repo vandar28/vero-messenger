@@ -274,6 +274,32 @@ body.chat-open #tc {
   animation: pulse 1.5s infinite;
 }
 
+/* ===== СВЕТЛО-СИНИЕ ЭМОДЗИ ДЛЯ КНОПОК ЧАТА ===== */
+.icon-btn .chat-emoji,
+.voice-btn .chat-emoji,
+.btn-gray .chat-emoji,
+.chat-header .btn .chat-emoji {
+  filter: brightness(0) saturate(100%) invert(45%) sepia(100%) saturate(500%) hue-rotate(200deg) brightness(110%);
+  display: inline-block;
+}
+
+/* НО КНОПКИ В МЕНЮ СООБЩЕНИЙ ОСТАВЛЯЕМ ЦВЕТНЫМИ */
+.msg-actions .action-btn {
+  filter: none !important;
+}
+
+/* Статусы, реакции, индикаторы - сохраняем цвета */
+.msg .reaction-badge,
+.msg-status,
+.avatar-sm span,
+.temp-banner,
+.badge,
+.recording-bar,
+.self-destruct-badge,
+.msg .reply-preview .reply-preview-username {
+  filter: none !important;
+}
+
 /* Поиск в чате */
 .chat-search-bar {
   display: none;
@@ -1708,9 +1734,9 @@ function oc(id,name,avatar){
     '<div class="avatar-sm" onclick="viewUserAvatars('+id+',\''+name+'\')">'+av(avatar)+'</div>'+
     '<div><h2>'+name+'</h2>'+
     '<div class="chat-status" style="font-size:9px;color:var(--text-muted);margin-top:-2px">загрузка...</div></div>'+
-    '<button class="btn btn-gray" onclick="showPinned('+id+')" style="font-size:9px;padding:4px 8px" title="Закреплённые">📌</button>'+
-    '<button class="btn btn-gray" onclick="openMediaModal('+id+')" style="font-size:9px;padding:4px 8px" title="Медиа">🖼️</button>'+
-    '<button class="btn btn-gray" onclick="toggleSearch()" style="font-size:9px;padding:4px 8px" title="Поиск">🔍</button>'+
+    '<button class="btn btn-gray" onclick="showPinned('+id+')" style="font-size:9px;padding:4px 8px" title="Закреплённые"><span class="chat-emoji">📌</span></button>'+
+    '<button class="btn btn-gray" onclick="openMediaModal('+id+')" style="font-size:9px;padding:4px 8px" title="Медиа"><span class="chat-emoji">🖼️</span></button>'+
+    '<button class="btn btn-gray" onclick="toggleSearch()" style="font-size:9px;padding:4px 8px" title="Поиск"><span class="chat-emoji">🔍</span></button>'+
     '<button class="btn btn-gray" onclick="closeChatFullscreen()" style="font-size:9px;padding:4px 10px">← Назад</button>'+
     '</div>'+
     '<div class="chat-search-bar" id="chatSearchBar"><input type="text" id="searchInput" placeholder="Поиск сообщений..." oninput="doSearch()"><span class="search-count" id="searchCount"></span><div class="search-nav"><button onclick="prevSearch()">▲</button><button onclick="nextSearch()">▼</button><button onclick="closeSearch()">✕</button></div></div>'+
@@ -1729,10 +1755,10 @@ function oc(id,name,avatar){
     '<div class="chat-input-area">'+
     '  <input type="text" id="mi" placeholder="Сообщение...">'+
     '  <input type="file" id="cf" style="display:none" multiple>'+
-    '  <button class="icon-btn" id="ab" title="Прикрепить файл">📎</button>'+
-    '  <button class="icon-btn" id="stickerBtn" title="Стикеры">😊</button>'+
-    '  <button class="voice-btn" id="voiceBtn" title="Голосовое сообщение">🎙️</button>'+
-    '  <button class="icon-btn" id="vidBtn" title="Видео">🎥</button>'+
+    '  <button class="icon-btn" id="ab" title="Прикрепить файл"><span class="chat-emoji">📎</span></button>'+
+    '  <button class="icon-btn" id="stickerBtn" title="Стикеры"><span class="chat-emoji">😊</span></button>'+
+    '  <button class="voice-btn" id="voiceBtn" title="Голосовое сообщение"><span class="chat-emoji">🎙️</span></button>'+
+    '  <button class="icon-btn" id="vidBtn" title="Видео"><span class="chat-emoji">🎥</span></button>'+
     '  <button class="btn" id="sb" style="padding:6px 14px;font-size:10px">Отпр.</button>'+
     '</div></div>'+
     '</div>';
@@ -2449,7 +2475,7 @@ async function toggleVoiceRecording() {
             }
         }
         voiceBtn.classList.remove('recording');
-        voiceBtn.textContent = '🎙️';
+        voiceBtn.innerHTML = '<span class="chat-emoji">🎙️</span>';
         voiceBtn.title = 'Голосовое сообщение';
         isRecording = false;
         document.getElementById('recBar').style.display = 'none';
@@ -2508,7 +2534,7 @@ async function toggleVoiceRecording() {
         isRecording = true;
         
         voiceBtn.classList.add('recording');
-        voiceBtn.textContent = '⏹️';
+        voiceBtn.innerHTML = '<span class="chat-emoji">⏹️</span>';
         voiceBtn.title = 'Остановить запись';
         
         document.getElementById('recBar').style.display = 'block';
