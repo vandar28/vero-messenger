@@ -223,18 +223,7 @@ body.chat-open #tc {
   margin: 0;
 }
 
-/* ===== ИКОНКИ ИЗ ПАПКИ /image/ ===== */
-.icon-img {
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  flex-shrink: 0;
-}
-
-/* ===== КНОПКИ С ИКОНКАМИ ===== */
+/* ===== ИКОНКИ НА ЭМОДЗИ ===== */
 .icon-btn {
   width: 36px;
   height: 36px;
@@ -249,17 +238,14 @@ body.chat-open #tc {
   transition: all 0.2s;
   flex-shrink: 0;
   padding: 0;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .icon-btn:hover {
   background: var(--bg-hover);
   color: var(--text);
   transform: scale(1.05);
-}
-
-.icon-btn .icon-img {
-  width: 20px;
-  height: 20px;
 }
 
 .voice-btn {
@@ -275,7 +261,7 @@ body.chat-open #tc {
   justify-content: center;
   transition: all 0.2s;
   flex-shrink: 0;
-  padding: 0;
+  font-size: 16px;
 }
 
 .voice-btn:hover {
@@ -286,11 +272,6 @@ body.chat-open #tc {
 .voice-btn.recording {
   background: var(--red);
   animation: pulse 1.5s infinite;
-}
-
-.voice-btn .icon-img {
-  width: 18px;
-  height: 18px;
 }
 
 /* Поиск в чате */
@@ -346,7 +327,6 @@ body.chat-open #tc {
 .chat-messages::-webkit-scrollbar{width:4px}
 .chat-messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
 
-/* ===== СООБЩЕНИЯ С ПЛАВНОЙ АНИМАЦИЕЙ ===== */
 .msg{
   max-width:65%;
   padding:5px 8px;
@@ -355,10 +335,9 @@ body.chat-open #tc {
   word-wrap:break-word;
   line-height:1.3;
   cursor:pointer;
-  transition:all 0.15s ease;
+  transition:all 0.15s;
   position:relative;
   scroll-margin-top:20px;
-  will-change: transform, width, font-size;
 }
 .msg.sent{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:2px}
 .msg.received{align-self:flex-start;background:var(--bg-hover);color:var(--text);border-bottom-left-radius:2px}
@@ -567,6 +546,7 @@ body.chat-open #tc {
   cursor: pointer;
   padding: 4px 6px;
   border-radius: 12px;
+  font-size: 12px;
   transition: all 0.2s;
   display: flex;
   align-items: center;
@@ -603,15 +583,6 @@ body.chat-open #tc {
   width: 1px;
   background: var(--border);
   margin: 4px 2px;
-}
-
-.msg-actions .action-btn .action-icon {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
 }
 
 .reaction-picker{
@@ -1226,8 +1197,6 @@ body.chat-open #tc {
   .msg-actions { top: -20px; padding: 2px 4px; }
   .icon-btn { width: 32px; height: 32px; }
   .voice-btn { width: 32px; height: 32px; }
-  .icon-img { width: 16px; height: 16px; }
-  .voice-btn .icon-img { width: 16px; height: 16px; }
 }
 </style>
 </head>
@@ -1359,7 +1328,6 @@ var voiceChunks = [];
 var chatFontSize = parseInt(localStorage.getItem('chatFontSize')) || 13;
 var chatMaxWidth = parseInt(localStorage.getItem('chatMaxWidth')) || 65;
 var activeMsgActions = null;
-var chatSizeUpdatePending = false;
 
 var isTemp=localStorage.getItem('is_temp')==='true'||U.is_temp;
 if(isTemp){
@@ -1740,9 +1708,9 @@ function oc(id,name,avatar){
     '<div class="avatar-sm" onclick="viewUserAvatars('+id+',\''+name+'\')">'+av(avatar)+'</div>'+
     '<div><h2>'+name+'</h2>'+
     '<div class="chat-status" style="font-size:9px;color:var(--text-muted);margin-top:-2px">загрузка...</div></div>'+
-    '<button class="btn btn-gray" onclick="showPinned('+id+')" style="font-size:9px;padding:4px 8px" title="Закреплённые"><span class="icon-img" style="background-image:url(/image/pin.png)"></span></button>'+
-    '<button class="btn btn-gray" onclick="openMediaModal('+id+')" style="font-size:9px;padding:4px 8px" title="Медиа"><span class="icon-img" style="background-image:url(/image/photo.png)"></span></button>'+
-    '<button class="btn btn-gray" onclick="toggleSearch()" style="font-size:9px;padding:4px 8px" title="Поиск"><span class="icon-img" style="background-image:url(/image/search.png)"></span></button>'+
+    '<button class="btn btn-gray" onclick="showPinned('+id+')" style="font-size:9px;padding:4px 8px" title="Закреплённые">📌</button>'+
+    '<button class="btn btn-gray" onclick="openMediaModal('+id+')" style="font-size:9px;padding:4px 8px" title="Медиа">🖼️</button>'+
+    '<button class="btn btn-gray" onclick="toggleSearch()" style="font-size:9px;padding:4px 8px" title="Поиск">🔍</button>'+
     '<button class="btn btn-gray" onclick="closeChatFullscreen()" style="font-size:9px;padding:4px 10px">← Назад</button>'+
     '</div>'+
     '<div class="chat-search-bar" id="chatSearchBar"><input type="text" id="searchInput" placeholder="Поиск сообщений..." oninput="doSearch()"><span class="search-count" id="searchCount"></span><div class="search-nav"><button onclick="prevSearch()">▲</button><button onclick="nextSearch()">▼</button><button onclick="closeSearch()">✕</button></div></div>'+
@@ -1761,10 +1729,10 @@ function oc(id,name,avatar){
     '<div class="chat-input-area">'+
     '  <input type="text" id="mi" placeholder="Сообщение...">'+
     '  <input type="file" id="cf" style="display:none" multiple>'+
-    '  <button class="icon-btn" id="ab" title="Прикрепить файл"><span class="icon-img" style="background-image:url(/image/attach.png)"></span></button>'+
-    '  <button class="icon-btn" id="stickerBtn" title="Стикеры"><span class="icon-img" style="background-image:url(/image/sticker.png)"></span></button>'+
-    '  <button class="voice-btn" id="voiceBtn" title="Голосовое сообщение"><span class="icon-img" style="background-image:url(/image/voice.png)"></span></button>'+
-    '  <button class="icon-btn" id="vidBtn" title="Видео"><span class="icon-img" style="background-image:url(/image/video.png)"></span></button>'+
+    '  <button class="icon-btn" id="ab" title="Прикрепить файл">📎</button>'+
+    '  <button class="icon-btn" id="stickerBtn" title="Стикеры">😊</button>'+
+    '  <button class="voice-btn" id="voiceBtn" title="Голосовое сообщение">🎙️</button>'+
+    '  <button class="icon-btn" id="vidBtn" title="Видео">🎥</button>'+
     '  <button class="btn" id="sb" style="padding:6px 14px;font-size:10px">Отпр.</button>'+
     '</div></div>'+
     '</div>';
@@ -1824,59 +1792,8 @@ function oc(id,name,avatar){
         }
     }).catch(function(){});
     
-    // Применяем сохраненные настройки размера
-    setTimeout(function() {
-        applyChatSizeSettings();
-    }, 300);
-    
     lm(id);
     ti=setInterval(function(){lm(id,true)},3000);
-}
-
-// ===== ИЗМЕНЕНИЕ РАЗМЕРА ЧАТА (БЕЗ ДЕРГАНИЙ) =====
-function applyChatSizeSettings() {
-    var messages = document.querySelectorAll('.msg');
-    var sizePercent = chatMaxWidth + '%';
-    messages.forEach(function(msg) {
-        msg.style.maxWidth = sizePercent;
-        msg.style.fontSize = chatFontSize + 'px';
-    });
-    // Обновляем значения в настройках
-    var fontSizeRange = document.getElementById('fontSizeRange');
-    var fontSizeValue = document.getElementById('fontSizeValue');
-    var maxWidthRange = document.getElementById('maxWidthRange');
-    var maxWidthValue = document.getElementById('maxWidthValue');
-    if (fontSizeRange) fontSizeRange.value = chatFontSize;
-    if (fontSizeValue) fontSizeValue.textContent = chatFontSize + 'px';
-    if (maxWidthRange) maxWidthRange.value = chatMaxWidth;
-    if (maxWidthValue) maxWidthValue.textContent = chatMaxWidth + '%';
-}
-
-function updateChatSize() {
-    // Используем requestAnimationFrame для плавности
-    if (chatSizeUpdatePending) return;
-    chatSizeUpdatePending = true;
-    
-    requestAnimationFrame(function() {
-        applyChatSizeSettings();
-        chatSizeUpdatePending = false;
-    });
-}
-
-function changeFontSize(value) {
-    chatFontSize = parseInt(value);
-    localStorage.setItem('chatFontSize', chatFontSize);
-    updateChatSize();
-}
-
-function changeMaxWidth(value) {
-    chatMaxWidth = parseInt(value);
-    localStorage.setItem('chatMaxWidth', chatMaxWidth);
-    updateChatSize();
-}
-
-function loadChatSizeSettings() {
-    setTimeout(applyChatSizeSettings, 100);
 }
 
 // ========== ПОИСК СООБЩЕНИЙ ==========
@@ -2135,11 +2052,11 @@ function showMsgActions(el, msgId) {
     var actions = document.createElement('div');
     actions.className = 'msg-actions show';
     
-    // Кнопка "Ответить"
     var replyBtn = document.createElement('button');
     replyBtn.className = 'action-btn reply-btn';
-    replyBtn.innerHTML = '<span class="action-icon" style="background-image:url(/image/reply.png)"></span>';
+    replyBtn.textContent = '↩️';
     replyBtn.title = 'Ответить';
+    replyBtn.style.fontSize = '14px';
     replyBtn.onclick = function(e) {
         e.stopPropagation();
         startReplyToMessage(msgId, msg.message_text, msg.file_path, msg.file_name);
@@ -2151,11 +2068,11 @@ function showMsgActions(el, msgId) {
     divider.className = 'action-divider';
     actions.appendChild(divider);
     
-    // Кнопка "Реакция"
     var reactionBtn = document.createElement('button');
     reactionBtn.className = 'action-btn reaction-btn';
-    reactionBtn.innerHTML = '😊';
+    reactionBtn.textContent = '😊';
     reactionBtn.title = 'Выбрать реакцию';
+    reactionBtn.style.fontSize = '14px';
     reactionBtn.onclick = function(e) {
         e.stopPropagation();
         closeAllMsgActions();
@@ -2170,9 +2087,10 @@ function showMsgActions(el, msgId) {
         
         var editBtn = document.createElement('button');
         editBtn.className = 'action-btn';
-        editBtn.innerHTML = '<span class="action-icon" style="background-image:url(/image/edit.png)"></span>';
+        editBtn.textContent = '✏️';
         editBtn.title = 'Редактировать';
         editBtn.style.color = 'var(--green)';
+        editBtn.style.fontSize = '13px';
         editBtn.onclick = function(e) {
             e.stopPropagation();
             closeAllMsgActions();
@@ -2193,10 +2111,11 @@ function showMsgActions(el, msgId) {
     }, 5000);
 }
 
-// ===== КЛИК В ЧАТЕ (НЕ НА СООБЩЕНИИ) =====
+// ===== КЛИК В ЧАТЕ (НЕ НА СООБЩЕНИИ) - ПОКАЗЫВАЕМ МЕНЮ ДЛЯ СООБЩЕНИЯ НА ЭТОМ УРОВНЕ =====
 document.addEventListener('click', function(e) {
     var cm = document.getElementById('cm');
     if (cm && cm.contains(e.target) && !e.target.closest('.msg')) {
+        // Находим сообщение, которое находится на уровне клика
         var clickY = e.clientY;
         var messages = cm.querySelectorAll('.msg');
         var targetMsg = null;
@@ -2482,6 +2401,41 @@ function editMessage(msgId) {
     });
 }
 
+// ===== ИЗМЕНЕНИЕ РАЗМЕРА ЧАТА (ТОЛЬКО ДЛЯ ТЕКУЩЕГО ПОЛЬЗОВАТЕЛЯ) =====
+function updateChatSize() {
+    var messages = document.querySelectorAll('.msg');
+    var sizePercent = chatMaxWidth + '%';
+    messages.forEach(function(msg) {
+        msg.style.maxWidth = sizePercent;
+        msg.style.fontSize = chatFontSize + 'px';
+    });
+    localStorage.setItem('chatFontSize', chatFontSize);
+    localStorage.setItem('chatMaxWidth', chatMaxWidth);
+    
+    var fontSizeRange = document.getElementById('fontSizeRange');
+    var fontSizeValue = document.getElementById('fontSizeValue');
+    var maxWidthRange = document.getElementById('maxWidthRange');
+    var maxWidthValue = document.getElementById('maxWidthValue');
+    if (fontSizeRange) fontSizeRange.value = chatFontSize;
+    if (fontSizeValue) fontSizeValue.textContent = chatFontSize + 'px';
+    if (maxWidthRange) maxWidthRange.value = chatMaxWidth;
+    if (maxWidthValue) maxWidthValue.textContent = chatMaxWidth + '%';
+}
+
+function changeFontSize(value) {
+    chatFontSize = parseInt(value);
+    updateChatSize();
+}
+
+function changeMaxWidth(value) {
+    chatMaxWidth = parseInt(value);
+    updateChatSize();
+}
+
+function loadChatSizeSettings() {
+    setTimeout(updateChatSize, 500);
+}
+
 // ===== ЗАПИСЬ ГОЛОСОВОГО СООБЩЕНИЯ (ОДНА КНОПКА) =====
 async function toggleVoiceRecording() {
     var voiceBtn = document.getElementById('voiceBtn');
@@ -2495,7 +2449,7 @@ async function toggleVoiceRecording() {
             }
         }
         voiceBtn.classList.remove('recording');
-        voiceBtn.innerHTML = '<span class="icon-img" style="background-image:url(/image/voice.png)"></span>';
+        voiceBtn.textContent = '🎙️';
         voiceBtn.title = 'Голосовое сообщение';
         isRecording = false;
         document.getElementById('recBar').style.display = 'none';
@@ -2554,7 +2508,7 @@ async function toggleVoiceRecording() {
         isRecording = true;
         
         voiceBtn.classList.add('recording');
-        voiceBtn.innerHTML = '<span class="icon-img" style="background-image:url(/image/stop.png);width:18px;height:18px;background-size:contain;background-repeat:no-repeat;background-position:center;display:inline-block;"></span>';
+        voiceBtn.textContent = '⏹️';
         voiceBtn.title = 'Остановить запись';
         
         document.getElementById('recBar').style.display = 'block';
@@ -2806,10 +2760,9 @@ function lm(id,silent,callback){
         if(bottom||!silent)c.scrollTop=c.scrollHeight;
         if(callback)callback();
         
-        // Применяем настройки размера без дерганий
-        setTimeout(function() {
-            applyChatSizeSettings();
-        }, 50);
+        if (typeof updateChatSize === 'function') {
+            setTimeout(updateChatSize, 100);
+        }
         
         api('/api/user/status/' + id).then(function(r){return r.json()}).then(function(status){
             var statusEl = document.querySelector('.chat-status');
