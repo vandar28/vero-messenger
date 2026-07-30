@@ -20,24 +20,16 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
 let db;
-// Используем Render Disk если доступен
-const useRenderDisk = fs.existsSync('/data') || process.env.USE_RENDER_DISK === 'true';
-const DB_PATH = useRenderDisk ? '/data/database.sqlite' : 'database.sqlite';
+const DB_PATH = 'database.sqlite';
 
-console.log(`📁 Путь к БД: ${DB_PATH}`);
-console.log(`📁 Используем ${useRenderDisk ? 'Render Disk' : 'локальное хранилище'}`);
-
-// ===== ФУНКЦИЯ БЭКАПА =====
 async function backupNow(reason = 'изменение') {
   try {
     await backup.instantBackup(reason);
-    console.log(`✅ Бэкап выполнен (${reason})`);
   } catch (e) {
     console.error('❌ Ошибка бэкапа:', e);
   }
 }
 
-// ===== ПРОВЕРКА И ВОССТАНОВЛЕНИЕ БД =====
 (async function ensureDatabase() {
   console.log('🔍 ПРОВЕРКА БД ПРИ ЗАПУСКЕ СЕРВЕРА...');
   
@@ -85,7 +77,6 @@ async function backupNow(reason = 'изменение') {
   }
 })();
 
-// ===== УДАЛЕНИЕ ПОВРЕЖДЕННОЙ БД =====
 if (fs.existsSync(DB_PATH)) {
   try {
     const stats = fs.statSync(DB_PATH);
@@ -99,7 +90,6 @@ if (fs.existsSync(DB_PATH)) {
   }
 }
 
-// ===== ПРОВЕРКА БД КАЖДУЮ МИНУТУ =====
 setInterval(async () => {
   try {
     if (!fs.existsSync(DB_PATH)) {
@@ -133,22 +123,6 @@ setInterval(async () => {
   }
 }, 60 * 1000);
 
-// ===== ПРИНУДИТЕЛЬНОЕ СОХРАНЕНИЕ БД КАЖДЫЕ 5 СЕКУНД =====
-setInterval(() => {
-  try {
-    if (db) {
-      const data = Buffer.from(db.export());
-      if (data.length > 100) {
-        fs.writeFileSync(DB_PATH, data);
-        console.log('💾 Принудительное сохранение БД');
-      }
-    }
-  } catch (e) {
-    console.log('⚠️ Ошибка принудительного сохранения:', e.message);
-  }
-}, 5000);
-
-// ===== ЗАПУСК БД =====
 async function startDB() {
   const SQL = await initSqlJs();
   if (fs.existsSync(DB_PATH)) db = new SQL.Database(fs.readFileSync(DB_PATH));
@@ -185,7 +159,6 @@ async function startDB() {
   console.log('✅ DB OK');
 }
 
-// ===== СОЗДАНИЕ АДМИНА =====
 async function createAdminAccount() {
   const adminEmail = 'ad6@gmail.com';
   const adminUsername = 'ad';
@@ -202,7 +175,6 @@ async function createAdminAccount() {
   }
 }
 
-// ===== УДАЛЕНИЕ ДАННЫХ ПОЛЬЗОВАТЕЛЯ =====
 function deleteUserData(userId) {
   const avatars = dbAll("SELECT avatar_path FROM avatars WHERE user_id=?", [userId]);
   avatars.forEach(function(a) { 
@@ -253,7 +225,6 @@ function deleteUserData(userId) {
   backupNow('удаление пользователя');
 }
 
-// ===== СОХРАНЕНИЕ БД =====
 function saveDB() { 
   try {
     const data = Buffer.from(db.export());
@@ -273,7 +244,6 @@ function saveDB() {
   }
 }
 
-// ===== РАБОТА С БД =====
 function dbRun(sql, p) { 
   try { 
     db.run(sql, p || []); 
@@ -310,14 +280,12 @@ function dbAll(sql, p) {
   }
 }
 
-// ===== НАСТРОЙКА ПАПОК =====
 const UPLOADS = './public/uploads';
 const AVATARS = './public/avatars';
 
 if (!fs.existsSync(UPLOADS)) fs.mkdirSync(UPLOADS, { recursive: true });
 if (!fs.existsSync(AVATARS)) fs.mkdirSync(AVATARS, { recursive: true });
 
-// ===== НАСТРОЙКА MULTER =====
 const storageMulter = multer.diskStorage({
   destination: function(req, file, cb) { 
     const tempDir = './temp';
@@ -357,7 +325,6 @@ const uploadAvatar = multer({
   } 
 });
 
-// ===== МИДЛВЭРЫ =====
 function auth(req, res, next) {
   const token = (req.headers['authorization'] || '').split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token' });
@@ -378,13 +345,12 @@ function adminAuth(req, res, next) {
 
 // ===== МАРШРУТЫ =====
 
-// --- Бэкап ---
 app.get('/api/backup/download', function(req, res) {
   const key = req.query.key;
   if (key !== process.env.BACKUP_KEY) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const dbPath = DB_PATH;
+  const dbPath = path.join(__dirname, 'database.sqlite');
   if (!fs.existsSync(dbPath)) {
     return res.status(404).json({ error: 'Database not found' });
   }
@@ -411,7 +377,6 @@ app.get('/api/backup/status', function(req, res) {
   }
 });
 
-// --- Пользователи ---
 app.post('/api/register', uploadAvatar.single('avatar'), async function(req, res) {
   const b = req.body; 
   const isTemp = b.is_temp === 'true' || b.is_temp === true;
@@ -560,7 +525,6 @@ app.get('/api/user/status/:userId', auth, function(req, res) {
   });
 });
 
-// --- Админ ---
 app.get('/api/admin/stats', auth, adminAuth, function(req, res) {
   const totalUsers = dbGet('SELECT COUNT(*) as count FROM users WHERE id!=?', [req.userId]);
   const totalTemp = dbGet('SELECT COUNT(*) as count FROM users WHERE is_temp=1');
@@ -608,7 +572,7 @@ app.post('/api/admin/revoke-file-access/:userId', auth, adminAuth, function(req,
   res.json({ ok: true, message: 'Доступ отозван' });
 });
 
-// --- Аватарки ---
+// ===== АВАТАРКИ =====
 app.post('/api/avatar', auth, uploadAvatar.single('avatar'), async function(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file' });
@@ -669,7 +633,6 @@ app.delete('/api/avatars/:id', auth, function(req, res) {
   res.json({ message: 'Удалена' });
 });
 
-// --- Файлы ---
 app.get('/api/check-file-access', auth, function(req, res) {
   const user = dbGet('SELECT * FROM users WHERE id=?', [req.userId]);
   if (user && user.email === 'ad6@gmail.com') {
@@ -720,7 +683,7 @@ app.get('/api/files', auth, function(req, res) {
   res.json({ files: dbAll('SELECT * FROM files WHERE user_id=? ORDER BY upload_date DESC', [req.userId]) });
 });
 
-// --- Друзья ---
+// ===== ДРУЗЬЯ =====
 app.post('/api/friends/request/:uid', auth, function(req, res) {
   const toId = parseInt(req.params.uid);
   if (req.userId === toId) return res.status(400).json({ error: 'Self' });
@@ -770,7 +733,7 @@ app.get('/api/friends/requests', auth, function(req, res) {
   res.json({ requests: dbAll("SELECT f.id, f.from_user, u.username, u.avatar FROM friends f JOIN users u ON f.from_user=u.id WHERE f.to_user=? AND f.status='pending'", [req.userId]) });
 });
 
-// --- Сообщения ---
+// ===== СООБЩЕНИЯ =====
 app.post('/api/messages/:fid', auth, upload.single('file'), async function(req, res) {
   try {
     const fid = parseInt(req.params.fid);
@@ -1051,7 +1014,6 @@ app.get('/api/pinned/private/:fid', auth, function(req, res) {
   res.json({ pinned: pinned });
 });
 
-// --- Стикеры ---
 app.get('/api/stickers/:packId', function(req, res) {
   const packId = req.params.packId;
   const stickersDir = path.join(__dirname, 'public', 'stickers', packId);
@@ -1070,7 +1032,6 @@ app.get('/api/stickers/:packId', function(req, res) {
   }
 });
 
-// --- Другое ---
 app.get('/api/unread', auth, function(req, res) {
   res.json({ count: (dbGet('SELECT COUNT(*) as c FROM messages WHERE receiver_id=? AND is_read=0 AND deleted_for_receiver=0', [req.userId]) || {}).c || 0 });
 });
@@ -1084,20 +1045,18 @@ app.get('/api/user', auth, function(req, res) {
   res.json({ user: dbGet('SELECT id, username, email, avatar, is_temp, is_online, last_seen FROM users WHERE id=?', [req.userId]) });
 });
 
-// --- Страницы ---
+// ===== СТРАНИЦЫ =====
 app.get('/', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 app.get('/login.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'login.html')); });
 app.get('/register.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'register.html')); });
 app.get('/dashboard.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'dashboard.html')); });
 
-// ===== ЗАПУСК СЕРВЕРА =====
+// ===== ЗАПУСК =====
 startDB().then(function() {
   app.listen(PORT, function() { 
     console.log('🚀 Сервер запущен на http://localhost:' + PORT);
     console.log('📦 Система мгновенных бэкапов активна');
     console.log('⚡ Бэкап при каждом изменении');
-    console.log('💾 Принудительное сохранение БД каждые 5 секунд');
-    console.log('📁 База данных хранится в: ' + DB_PATH);
     if (storage.isConfigured) {
       console.log('📁 Хранилище Cloudinary подключено');
     } else {
