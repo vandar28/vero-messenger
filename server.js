@@ -30,99 +30,6 @@ async function backupNow(reason = 'изменение') {
   }
 }
 
-(async function ensureDatabase() {
-  console.log('🔍 ПРОВЕРКА БД ПРИ ЗАПУСКЕ СЕРВЕРА...');
-  
-  let needRestore = false;
-  
-  if (!fs.existsSync(DB_PATH)) {
-    console.log('⚠️ БД не существует!');
-    needRestore = true;
-  } else {
-    try {
-      const stats = fs.statSync(DB_PATH);
-      if (stats.size < 100) {
-        console.log('⚠️ БД слишком маленькая!');
-        needRestore = true;
-      } else {
-        const data = fs.readFileSync(DB_PATH);
-        const header = data.slice(0, 16).toString('hex');
-        if (!header.startsWith('53514c69746520666f726d6174')) {
-          console.log('⚠️ БД повреждена!');
-          needRestore = true;
-        } else {
-          const str = data.toString('utf8', 0, Math.min(data.length, 5000));
-          if (!str.includes('ad6@gmail.com') && !str.includes('users')) {
-            console.log('⚠️ В БД нет пользователей!');
-            needRestore = true;
-          }
-        }
-      }
-    } catch (e) {
-      console.log('⚠️ Ошибка проверки БД:', e.message);
-      needRestore = true;
-    }
-  }
-  
-  if (needRestore) {
-    console.log('🔄 Восстанавливаем БД из бэкапа...');
-    const restored = await backup.restoreFromBackup();
-    if (restored) {
-      console.log('✅ БД успешно восстановлена!');
-    } else {
-      console.log('⚠️ Не удалось восстановить БД. Будет создана новая.');
-    }
-  } else {
-    console.log('✅ БД валидна');
-  }
-})();
-
-if (fs.existsSync(DB_PATH)) {
-  try {
-    const stats = fs.statSync(DB_PATH);
-    if (stats.size < 100) {
-      console.log('🗑️ Удаляем поврежденную БД (слишком маленькая)...');
-      fs.unlinkSync(DB_PATH);
-      console.log('✅ БД удалена');
-    }
-  } catch (e) {
-    console.log('⚠️ Не удалось проверить БД:', e.message);
-  }
-}
-
-setInterval(async () => {
-  try {
-    if (!fs.existsSync(DB_PATH)) {
-      console.log('⚠️ БД исчезла! Восстанавливаем из бэкапа...');
-      await backup.restoreFromBackup();
-      return;
-    }
-    
-    const stats = fs.statSync(DB_PATH);
-    if (stats.size < 100) {
-      console.log('⚠️ БД стала слишком маленькой! Восстанавливаем из бэкапа...');
-      await backup.restoreFromBackup();
-      return;
-    }
-    
-    const data = fs.readFileSync(DB_PATH);
-    const header = data.slice(0, 16).toString('hex');
-    if (!header.startsWith('53514c69746520666f726d6174')) {
-      console.log('⚠️ БД повреждена! Восстанавливаем из бэкапа...');
-      await backup.restoreFromBackup();
-      return;
-    }
-    
-    const str = data.toString('utf8', 0, Math.min(data.length, 2000));
-    if (!str.includes('ad6@gmail.com') && !str.includes('users')) {
-      console.log('⚠️ В БД нет пользователей! Восстанавливаем из бэкапа...');
-      await backup.restoreFromBackup();
-    }
-  } catch (e) {
-    console.log('⚠️ Ошибка проверки БД:', e.message);
-  }
-}, 60 * 1000);
-
 async function startDB() {
   const SQL = await initSqlJs();
   if (fs.existsSync(DB_PATH)) db = new SQL.Database(fs.readFileSync(DB_PATH));
@@ -231,16 +138,24 @@ function saveDB() {
     fs.writeFileSync(DB_PATH, data);
     console.log('💾 БД сохранена');
     
-    setImmediate(async () => {
-      try {
-        await backup.instantBackup('сохранение БД');
-      } catch (e) {
-        console.error('❌ Ошибка мгновенного бэкапа:', e);
-      }
-    });
+    // ПРОВЕРЯЕМ РАЗМЕР БД ПЕРЕД БЭКАПОМ
+    const stats = fs.statSync(DB_PATH);
+    if (stats.size > 1000) {
+      // Бэкап делаем асинхронно, с задержкой 2 секунды
+      // чтобы БД точно успела сохраниться на диск и инициализироваться
+      setTimeout(async () => {
+        try {
+          await backup.instantBackup('сохранение БД');
+        } catch (e) {
+          console.error('❌ Ошибка мгновенного бэкапа:', e);
+        }
+      }, 2000);
+    } else {
+      console.log(`⚠️ БД слишком маленькая (${stats.size} байт), бэкап не создан`);
+    }
     
-  } catch(e) {
-    console.error('❌ Ошибка сохранения БД:', e);
+  } catch(e) { 
+    console.error('❌ Ошибка сохранения БД:', e); 
   }
 }
 
