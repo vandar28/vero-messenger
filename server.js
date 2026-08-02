@@ -12,7 +12,6 @@ const backup = require('./backup');
 const storage = require('./storage-cloudinary');
 
 const app = express();
-// ===== ВАЖНО: ИСПОЛЬЗУЕМ ПОРТ ИЗ ПЕРЕМЕННОЙ ОКРУЖЕНИЯ =====
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'secret123';
 
@@ -968,12 +967,9 @@ app.get('/register.html', function(req, res) { res.sendFile(path.join(__dirname,
 app.get('/dashboard.html', function(req, res) { res.sendFile(path.join(__dirname, 'public', 'dashboard.html')); });
 
 // ===== ЗАПУСК =====
-// ===== ВАЖНО: СЛУШАЕМ ВСЕ ИНТЕРФЕЙСЫ (0.0.0.0) ДЛЯ RENDER =====
 startDB().then(function() {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, '0.0.0.0', function() { 
-    console.log(`🚀 Сервер запущен на порту ${PORT}`);
-    console.log(`📡 Доступен по адресу: http://0.0.0.0:${PORT}`);
+  app.listen(PORT, function() { 
+    console.log('🚀 Сервер запущен на http://localhost:' + PORT);
     console.log('📦 Система мгновенных бэкапов активна');
     console.log('⚡ Бэкап при каждом изменении');
     if (storage.isConfigured) {
